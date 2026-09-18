@@ -1,0 +1,25 @@
+{
+  "name": "backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "summary:run": "node src/scripts/runSummary.js",
+    "migrate:json": "node src/scripts/migrateFromJson.js",
+    "check:crypto": "node src/scripts/checkCrypto.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/cors": "^11.3.0",
+    "@notionhq/client": "^5.26.0",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.12.5",
+    "googleapis": "^181.0.0",
+    "mongoose": "^9.10.1",
+    "node-cron": "^4.6.0",
+    "openai": "^7.17.0"
+  }
+}

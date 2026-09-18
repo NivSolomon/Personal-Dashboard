@@ -1,0 +1,156 @@
+@import 'tailwindcss';
+
+/* Class-based dark mode, so an explicit user choice can override the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #f1f5f9;
+  --surface: #ffffff;
+  --surface-hover: #f8fafc;
+  --foreground: #0f172a;
+  --muted: #64748b;
+  --subtle: #94a3b8;
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --ring: #6366f1;
+  --skeleton: #e2e8f0;
+  --banner-from: #4f46e5;
+  --banner-to: #7c3aed;
+  --tip-from: #fff7ed;
+  --tip-to: #fef9c3;
+  --tip-accent: #c2410c;
+
+  --tone-indigo: #e0e7ff;
+  --tone-indigo-fg: #4338ca;
+  --tone-blue: #dbeafe;
+  --tone-blue-fg: #1d4ed8;
+  --tone-green: #d1fae5;
+  --tone-green-fg: #047857;
+  --tone-amber: #fef3c7;
+  --tone-amber-fg: #b45309;
+  --tone-rose: #ffe4e6;
+  --tone-rose-fg: #be123c;
+  --tone-neutral: #f1f5f9;
+  --tone-neutral-fg: #475569;
+}
+
+.dark {
+  --background: #0a0f1c;
+  --surface: #0f172a;
+  --surface-hover: #1a2436;
+  --foreground: #e8edf5;
+  --muted: #94a3b8;
+  --subtle: #64748b;
+  --border: #1e293b;
+  --border-subtle: #172033;
+  --ring: #818cf8;
+  --skeleton: #1e293b;
+  --banner-from: #3730a3;
+  --banner-to: #5b21b6;
+  --tip-from: #1c140e;
+  --tip-to: #271c12;
+  --tip-accent: #fdba74;
+
+  --tone-indigo: #1e1b4b;
+  --tone-indigo-fg: #a5b4fc;
+  --tone-blue: #172554;
+  --tone-blue-fg: #93c5fd;
+  --tone-green: #052e26;
+  --tone-green-fg: #6ee7b7;
+  --tone-amber: #40200a;
+  --tone-amber-fg: #fcd34d;
+  --tone-rose: #4c0519;
+  --tone-rose-fg: #fda4af;
+  --tone-neutral: #1e293b;
+  --tone-neutral-fg: #cbd5e1;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-ring: var(--ring);
+  --color-skeleton: var(--skeleton);
+  --color-banner-from: var(--banner-from);
+  --color-banner-to: var(--banner-to);
+  --color-tip-from: var(--tip-from);
+  --color-tip-to: var(--tip-to);
+  --color-tip-accent: var(--tip-accent);
+
+  --color-tone-indigo: var(--tone-indigo);
+  --color-tone-indigo-fg: var(--tone-indigo-fg);
+  --color-tone-blue: var(--tone-blue);
+  --color-tone-blue-fg: var(--tone-blue-fg);
+  --color-tone-green: var(--tone-green);
+  --color-tone-green-fg: var(--tone-green-fg);
+  --color-tone-amber: var(--tone-amber);
+  --color-tone-amber-fg: var(--tone-amber-fg);
+  --color-tone-rose: var(--tone-rose);
+  --color-tone-rose-fg: var(--tone-rose-fg);
+  --color-tone-neutral: var(--tone-neutral);
+  --color-tone-neutral-fg: var(--tone-neutral-fg);
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /* One global keyboard-focus treatment, rather than per-component rings. */
+  :focus-visible {
+    @apply outline-ring rounded-sm outline-2 outline-offset-2;
+  }
+}
+
+@utility scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility rise-in {
+  animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.toast-in {
+  animation: toast-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.modal-dialog {
+  margin: auto;
+  overflow: visible;
+}
+
+.modal-dialog::backdrop {
+  background: rgb(15 23 42 / 0.5);
+}
+
+.dark .modal-dialog::backdrop {
+  background: rgb(2 6 23 / 0.72);
+}

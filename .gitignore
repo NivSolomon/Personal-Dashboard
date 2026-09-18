@@ -1,0 +1,12 @@
+.env
+.env.local
+
+node_modules/
+dist/
+build/
+
+backend/data/
+
+npm-debug.log*
+yarn-error.log*
+.DS_Store
