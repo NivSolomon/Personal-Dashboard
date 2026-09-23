@@ -1,8 +1,9 @@
-# Render Blueprint for the API.
-# Morning summaries and watchlist checks run inside this process (node-cron),
-# so the service has to stay awake. The starter plan does; the free plan sleeps
-# and those jobs will not fire. Keep a single instance so the scheduler does
-# not run twice.
+# Render Blueprint for the API. Free web service: no credit card.
+# Render spins this instance down after 15 minutes without a request, and the
+# next request takes about a minute to wake it. node-cron (morning summary,
+# watchlist) only runs while the process is awake. A free external ping to
+# /health every 10 minutes keeps it up; one service fits in the 750 free
+# hours each month. Keep a single instance so the scheduler does not run twice.
 #
 # Create it from the Render Dashboard: New → Blueprint → this repo.
 # Secrets are prompted once (sync: false). They are not stored in git.
@@ -12,7 +13,7 @@ services:
   - type: web
     name: mydashi-api
     runtime: node
-    plan: starter
+    plan: free
     region: frankfurt
     numInstances: 1
     healthCheckPath: /health
