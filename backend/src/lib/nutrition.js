@@ -1,9 +1,13 @@
-import { localDateKey } from './time.js';
+import { localDateKey, shiftDateKey } from './time.js';
 
 export const DEFAULT_CALORIE_GOAL = 2000;
 export const GOAL_MAX_KCAL = 10000;
 export const LOG_MAX_ENTRIES = 80;
 export const NAME_MAX = 200;
+export const HISTORY_DAYS = 21;
+export const WEEK_DAYS = 7;
+
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 function num(value, fallback = 0) {
   const n = Number(value);
@@ -18,6 +22,10 @@ function roundGrams(value) {
   return Math.max(0, Math.round(num(value) * 10) / 10);
 }
 
+function isDateKey(value) {
+  return DATE_KEY.test(String(value || ''));
+}
+
 export function emptyLog(date) {
   return { date, entries: [] };
 }
@@ -28,9 +36,42 @@ export function calorieGoalOf(settings) {
   return DEFAULT_CALORIE_GOAL;
 }
 
+/** Merge legacy `{ date, entries }` logs with the `{ days: { [date]: entries } }` map. */
+export function daysOfLog(log) {
+  const days = {};
+  if (log?.days && typeof log.days === 'object' && !Array.isArray(log.days)) {
+    for (const [date, entries] of Object.entries(log.days)) {
+      if (isDateKey(date) && Array.isArray(entries)) days[date] = entries;
+    }
+  }
+  if (isDateKey(log?.date) && Array.isArray(log.entries)) {
+    days[log.date] = log.entries;
+  }
+  return days;
+}
+
+function pruneDays(days, today) {
+  const keepFrom = shiftDateKey(today, -(HISTORY_DAYS - 1));
+  const keep = {};
+  for (const [date, entries] of Object.entries(days)) {
+    if (date >= keepFrom && date <= today) keep[date] = entries;
+  }
+  return keep;
+}
+
+export function packLog(days, today) {
+  const pruned = pruneDays(days, today);
+  return {
+    date: today,
+    entries: pruned[today] || [],
+    days: pruned,
+  };
+}
+
 export function logForDate(log, date) {
-  if (!log || log.date !== date || !Array.isArray(log.entries)) return emptyLog(date);
-  return { date, entries: log.entries };
+  const entries = daysOfLog(log)[date];
+  if (!Array.isArray(entries)) return emptyLog(date);
+  return { date, entries };
 }
 
 export function totalsOf(entries) {
@@ -60,6 +101,86 @@ function publicEntry(entry) {
   };
 }
 
+function foldName(name) {
+  return String(name || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function weekDays(log, today) {
+  const stored = daysOfLog(log);
+  const days = [];
+  for (let offset = WEEK_DAYS - 1; offset >= 0; offset -= 1) {
+    const date = shiftDateKey(today, -offset);
+    const entries = stored[date] || [];
+    const totals = totalsOf(entries);
+    days.push({
+      date,
+      calories: roundKcal(totals.calories),
+      protein: roundGrams(totals.protein),
+      carbs: roundGrams(totals.carbs),
+      fat: roundGrams(totals.fat),
+      meals: entries.length,
+    });
+  }
+  return days;
+}
+
+function weekStats(log, today) {
+  const stored = daysOfLog(log);
+  const counts = new Map();
+  let richest = null;
+
+  for (let offset = WEEK_DAYS - 1; offset >= 0; offset -= 1) {
+    const date = shiftDateKey(today, -offset);
+    for (const entry of stored[date] || []) {
+      const name = String(entry.name || '').trim();
+      const key = foldName(name);
+        if (key) {
+          const row = counts.get(key) || { name, count: 0, calories: 0 };
+          row.count += 1;
+          row.calories += roundKcal(entry.calories);
+          if (name && (row.name === row.name.toLowerCase() || name.length > row.name.length)) {
+            row.name = name;
+          }
+          counts.set(key, row);
+        }
+      const protein = roundGrams(entry.protein);
+      if (protein > 0 && (!richest || protein > richest.protein)) {
+        richest = {
+          name: name || '—',
+          protein,
+          calories: roundKcal(entry.calories),
+          date,
+        };
+      }
+    }
+  }
+
+  const favorite = [...counts.values()].sort((a, b) => b.count - a.count || b.calories - a.calories)[0] || null;
+
+  return {
+    favorite: favorite
+      ? { name: favorite.name, count: favorite.count, calories: roundKcal(favorite.calories) }
+      : null,
+    richestProtein: richest,
+  };
+}
+
+export function weekNutrition(user, today = localDateKey(user.settings?.timeZone)) {
+  const days = weekDays(user.nutritionLog, today);
+  const totalCalories = days.reduce((sum, day) => sum + day.calories, 0);
+  const logged = days.filter((day) => day.meals > 0).length;
+  const stats = weekStats(user.nutritionLog, today);
+  return {
+    days,
+    totalCalories: roundKcal(totalCalories),
+    avgCalories: roundKcal(logged ? totalCalories / logged : 0),
+    ...stats,
+  };
+}
+
 export function nutritionSummary(user) {
   const date = localDateKey(user.settings?.timeZone);
   const log = logForDate(user.nutritionLog, date);
@@ -74,6 +195,7 @@ export function nutritionSummary(user) {
     carbs: roundGrams(totals.carbs),
     fat: roundGrams(totals.fat),
     goalPercent: goal > 0 ? Math.round((totals.calories / goal) * 100) : 0,
+    week: weekNutrition(user, date),
   };
 }
 
@@ -107,15 +229,13 @@ export function parseLogEntry(body = {}) {
 }
 
 export function addEntryToLog(log, entry, date) {
-  const current = logForDate(log, date);
-  const entries = [entry, ...current.entries].slice(0, LOG_MAX_ENTRIES);
-  return { date, entries };
+  const days = daysOfLog(log);
+  days[date] = [entry, ...(days[date] || [])].slice(0, LOG_MAX_ENTRIES);
+  return packLog(days, date);
 }
 
 export function removeEntryFromLog(log, entryId, date) {
-  const current = logForDate(log, date);
-  return {
-    date,
-    entries: current.entries.filter((item) => item.id !== entryId),
-  };
+  const days = daysOfLog(log);
+  days[date] = (days[date] || []).filter((item) => item.id !== entryId);
+  return packLog(days, date);
 }

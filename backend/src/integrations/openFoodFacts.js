@@ -3,6 +3,8 @@
  * A descriptive User-Agent is required by their API etiquette.
  */
 
+import { isPreparedMealQuery, rankFoodProducts } from '../lib/foodQuery.js';
+
 const OFF_BASE = 'https://world.openfoodfacts.org';
 const USER_AGENT = 'MorningDashboard/1.0 (nutrition widget; local dashboard)';
 
@@ -108,6 +110,7 @@ export async function fetchProductByBarcode(code) {
 export async function searchProducts(query, { pageSize = 8 } = {}) {
   const q = String(query || '').trim().slice(0, 80);
   if (q.length < 2) return [];
+  if (isPreparedMealQuery(q)) return [];
   const barcode = normalizeBarcode(q);
   if (barcode && barcode === q.replace(/\s/g, '')) {
     const product = await fetchProductByBarcode(barcode).catch(() => null);
@@ -125,7 +128,8 @@ export async function searchProducts(query, { pageSize = 8 } = {}) {
     const mapped = (Array.isArray(data?.products) ? data.products : [])
       .map(productFromOff)
       .filter(Boolean);
-    if (mapped.length) return mapped;
+    const ranked = rankFoodProducts(q, mapped);
+    if (ranked.length) return ranked;
   } catch {
     /* CGI search is the older catalog endpoint; try it if v2 is down. */
   }
@@ -139,7 +143,10 @@ export async function searchProducts(query, { pageSize = 8 } = {}) {
   });
   try {
     const data = await offGet(`${OFF_BASE}/cgi/search.pl?${cgi}`);
-    return (Array.isArray(data?.products) ? data.products : []).map(productFromOff).filter(Boolean);
+    return rankFoodProducts(
+      q,
+      (Array.isArray(data?.products) ? data.products : []).map(productFromOff).filter(Boolean),
+    );
   } catch {
     return [];
   }

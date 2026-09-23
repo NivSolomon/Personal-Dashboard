@@ -11,6 +11,22 @@ export function timeLabel(iso, timeZone) {
   );
 }
 
+/** Clock time if it is still today in `timeZone`; otherwise a short weekday. */
+export function mailTime(iso, timeZone) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const dayOf = (value) =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(value);
+  if (timeZone && dayOf(date) === dayOf(new Date())) return timeLabel(iso, timeZone);
+  return new Intl.DateTimeFormat(loc(), { timeZone, weekday: 'short' }).format(date);
+}
+
 /** Compact drive time for the Home/Work chips. */
 export function driveDurationLabel(minutes) {
   const value = Math.max(0, Math.round(Number(minutes) || 0));

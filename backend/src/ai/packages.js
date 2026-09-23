@@ -1,13 +1,10 @@
-import OpenAI from 'openai';
 import { config, isOpenAiConfigured } from '../config.js';
+import { getOpenAiClient } from './client.js';
 import { parseJsonObject } from '../lib/json.js';
 import { localDateKey } from '../lib/time.js';
 
-let client = null;
-
 function getClient() {
-  if (!client) client = new OpenAI({ apiKey: config.openai.apiKey });
-  return client;
+  return getOpenAiClient();
 }
 
 function compact(text, limit) {

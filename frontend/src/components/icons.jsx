@@ -80,6 +80,22 @@ export function SparkleIcon(props) {
   );
 }
 
+export function ChatIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M6 7.5A2.5 2.5 0 0 1 8.5 5h7A2.5 2.5 0 0 1 18 7.5v6A2.5 2.5 0 0 1 15.5 16H11l-4 3v-3H8.5A2.5 2.5 0 0 1 6 13.5z" />
+    </Icon>
+  );
+}
+
+export function SendIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M4 12 20 5l-7 14-1.5-6.5z" />
+    </Icon>
+  );
+}
+
 export function RefreshIcon(props) {
   return (
     <Icon {...props}>

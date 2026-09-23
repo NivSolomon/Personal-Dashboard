@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
-import { api } from './lib/api.js';
+import { api, isAbortError } from './lib/api.js';
 import { errorKind, sessionErrorCopy } from './lib/errors.js';
 import { todayLabel } from './lib/format.js';
 import { useTheme } from './lib/theme.js';
@@ -21,12 +21,21 @@ import { GearIcon, LayoutIcon, SignOutIcon } from './components/icons.jsx';
 import WeatherStatus from './components/WeatherStatus.jsx';
 import WatchlistStatus from './components/WatchlistStatus.jsx';
 import PlacesShortcuts from './components/PlacesShortcuts.jsx';
-import PlacesSetup from './components/PlacesSetup.jsx';
-import OnboardingWizard from './components/OnboardingWizard.jsx';
+import WelcomeMoment from './components/WelcomeMoment.jsx';
 import Dashboard from './components/Dashboard.jsx';
-import SettingsPage from './pages/SettingsPage.jsx';
 import { placesReady } from './lib/places.js';
 import { enabledWidgetsKey } from './lib/widgets.js';
+import {
+  clearBoardSnapshot,
+  dashboardLooksReady,
+  mergeDashboard,
+  readBoardSnapshot,
+  writeBoardSnapshot,
+} from './lib/boardCache.js';
+
+const SettingsPage = lazy(() => import('./pages/SettingsPage.jsx'));
+const OnboardingWizard = lazy(() => import('./components/OnboardingWizard.jsx'));
+const PlacesSetup = lazy(() => import('./components/PlacesSetup.jsx'));
 
 const EMPTY_DASHBOARD = {
   events: [],
@@ -37,8 +46,10 @@ const EMPTY_DASHBOARD = {
   notion: [],
   weather: null,
   activity: null,
-  fx: null,
+  fx: { base: 'ILS', asOf: null, quotes: [] },
   watchlist: { items: [], fired: [] },
+  commute: null,
+  dayPlan: null,
   errors: [],
 };
 
@@ -76,6 +87,7 @@ function Shell({
   watchlistFired,
   layoutEditing,
   onToggleLayout,
+  onStartLayout,
   children,
 }) {
   const { t, language } = useT();
@@ -83,13 +95,16 @@ function Shell({
 
   return (
     <div className="mx-auto max-w-7xl p-6 sm:p-8">
+      <a href="#main" className="skip-link">
+        {t('skipToContent')}
+      </a>
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <BrandLogo className="size-8" withName />
           <p className="text-muted mt-2 text-sm font-medium">{todayLabel(session.timeZone)}</p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-3">
-            <h1 className="text-foreground text-3xl font-bold">{t('hello', { name: firstName })}</h1>
-            <WeatherStatus weather={weather} loading={weatherLoading} />
+          <h1 className="text-foreground mt-0.5 text-3xl font-bold">{t('hello', { name: firstName })}</h1>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <WeatherStatus weather={weather} loading={weatherLoading} timeZone={session.timeZone} />
             <WatchlistStatus fired={watchlistFired} />
             <PlacesShortcuts
               places={session.settings?.places}
@@ -136,7 +151,17 @@ function Shell({
           </button>
         </div>
       </header>
-      {children}
+      <main id="main">{children}</main>
+      <WelcomeMoment firstName={firstName} onCustomize={onStartLayout} />
+    </div>
+  );
+}
+
+function PageFallback() {
+  const { t } = useT();
+  return (
+    <div className="grid min-h-[40vh] place-items-center p-6">
+      <p className="text-muted text-sm">{t('loading')}</p>
     </div>
   );
 }
@@ -164,7 +189,7 @@ function AppTree({
   applyAccount,
   applyLayout,
   applyNutrition,
-  handleRefresh,
+  handleBoardChange,
   handleLogout,
   signOut,
   onLanguageChange,
@@ -214,31 +239,36 @@ function AppTree({
 
   if (!session.hasCompletedOnboarding) {
     return (
-      <OnboardingWizard
-        account={session}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onSaved={(next) => applyAccount(next)}
-        onLogout={handleLogout}
-        onLanguageChange={onLanguageChange}
-      />
+      <Suspense fallback={<PageFallback />}>
+        <OnboardingWizard
+          account={session}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onSaved={(next) => applyAccount(next)}
+          onLogout={handleLogout}
+          onLanguageChange={onLanguageChange}
+        />
+      </Suspense>
     );
   }
 
   if (!placesReady(session.settings)) {
     return (
-      <PlacesSetup
-        account={session}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onSaved={(next) => applyAccount(next)}
-        onLogout={handleLogout}
-        onLanguageChange={onLanguageChange}
-      />
+      <Suspense fallback={<PageFallback />}>
+        <PlacesSetup
+          account={session}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onSaved={(next) => applyAccount(next)}
+          onLogout={handleLogout}
+          onLanguageChange={onLanguageChange}
+        />
+      </Suspense>
     );
   }
 
   return (
+    <Suspense fallback={<PageFallback />}>
     <Routes>
       <Route
         path="/"
@@ -254,6 +284,7 @@ function AppTree({
             watchlistFired={dashboard.watchlist?.fired || []}
             layoutEditing={layoutEditing}
             onToggleLayout={() => setLayoutEditing((open) => !open)}
+            onStartLayout={() => setLayoutEditing(true)}
           >
             <Dashboard
               session={session}
@@ -262,11 +293,10 @@ function AppTree({
               summary={summary}
               summaryState={summaryState}
               editing={layoutEditing}
-              onRefresh={handleRefresh}
               onAccountChange={applyAccount}
               onLayoutChange={applyLayout}
               onNutritionChange={applyNutrition}
-              onReload={loadDashboard}
+              onReload={handleBoardChange}
             />
           </Shell>
         }
@@ -284,62 +314,152 @@ function AppTree({
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }
 
 export default function App() {
   const [session, setSession] = useState({ status: 'loading' });
-  const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [summary, setSummary] = useState(null);
-  const [summaryState, setSummaryState] = useState({ loading: true, error: null, refreshing: false });
+  const [dashboard, setDashboard] = useState(
+    () => readBoardSnapshot()?.dashboard || EMPTY_DASHBOARD,
+  );
+  const [dashboardLoading, setDashboardLoading] = useState(
+    () => !dashboardLooksReady(readBoardSnapshot()?.dashboard),
+  );
+  const [summary, setSummary] = useState(() => readBoardSnapshot()?.summary || null);
+  const [summaryState, setSummaryState] = useState(() => ({
+    loading: !readBoardSnapshot()?.summary,
+    error: null,
+    refreshing: false,
+  }));
   const [layoutEditing, setLayoutEditing] = useState(false);
   const [guestLanguage, setGuestLanguage] = useState(readStoredLanguage);
   const { theme, toggle: toggleTheme } = useTheme();
+  const sessionRef = useRef(session);
+  const dashboardRef = useRef(dashboard);
+  const summaryRef = useRef(summary);
+  const briefingSyncTimer = useRef(null);
+  sessionRef.current = session;
+  dashboardRef.current = dashboard;
+  summaryRef.current = summary;
 
   const signOut = useCallback(() => setSession({ status: 'anon' }), []);
 
-  const loadDashboard = useCallback(async () => {
-    setDashboardLoading(true);
-    try {
-      setDashboard(await api.dashboard());
-    } catch (error) {
-      if (error.needsLogin) signOut();
-      else setDashboard({ ...EMPTY_DASHBOARD, errors: [{ source: 'all', code: errorKind(error) }] });
-    } finally {
-      setDashboardLoading(false);
-    }
-  }, [signOut]);
+  const persistBoard = useCallback((nextDashboard, nextSummary) => {
+    const userId = sessionRef.current?.user?.id;
+    if (!userId) return;
+    writeBoardSnapshot({
+      userId,
+      dashboard: nextDashboard,
+      summary: nextSummary,
+    });
+  }, []);
+
+  const loadDashboard = useCallback(
+    async (signal, { silent = false } = {}) => {
+      const stay = silent || dashboardLooksReady(dashboardRef.current);
+      if (!stay) setDashboardLoading(true);
+      try {
+        const data = await api.dashboard({ signal });
+        if (signal?.aborted) return;
+        const next = mergeDashboard(dashboardRef.current, data);
+        setDashboard(next);
+        persistBoard(next, summaryRef.current);
+      } catch (error) {
+        if (isAbortError(error)) return;
+        if (error.needsLogin) signOut();
+        else if (!stay) {
+          setDashboard({ ...EMPTY_DASHBOARD, errors: [{ source: 'all', code: errorKind(error) }] });
+        }
+      } finally {
+        if (!signal?.aborted) setDashboardLoading(false);
+      }
+    },
+    [persistBoard, signOut],
+  );
 
   const loadSummary = useCallback(
-    async (refresh = false) => {
-      setSummaryState((prev) => ({ ...prev, error: null, [refresh ? 'refreshing' : 'loading']: true }));
+    async (refresh = false, signal, { keepVisible = false, language } = {}) => {
+      const stay =
+        keepVisible || Boolean(summaryRef.current?.text || summaryRef.current?.dailyTip);
+      setSummaryState((prev) => ({
+        ...prev,
+        error: null,
+        loading: stay ? false : !refresh,
+        refreshing: refresh || stay,
+      }));
       try {
-        setSummary(refresh ? await api.refreshSummary() : await api.summary());
+        const data = refresh
+          ? await api.refreshSummary({ signal })
+          : await api.summary({ signal, language });
+        if (signal?.aborted) return;
+        setSummary(data);
+        persistBoard(dashboardRef.current, data);
       } catch (error) {
+        if (isAbortError(error)) return;
         if (error.needsLogin) signOut();
         else setSummaryState((prev) => ({ ...prev, error: errorKind(error) }));
       } finally {
-        setSummaryState((prev) => ({ ...prev, loading: false, refreshing: false }));
+        if (!signal?.aborted) {
+          setSummaryState((prev) => ({ ...prev, loading: false, refreshing: false }));
+        }
       }
     },
-    [signOut],
+    [persistBoard, signOut],
   );
 
   useEffect(() => {
-    api
-      .me()
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const applyMe = (me) => {
+      if (!me.hasCompletedOnboarding) {
+        const guest = readStoredLanguage();
+        me = { ...me, settings: { ...me.settings, language: guest } };
+      }
+      const snap = readBoardSnapshot();
+      if (snap?.userId && me.user?.id && snap.userId !== me.user.id) {
+        clearBoardSnapshot();
+        setDashboard(EMPTY_DASHBOARD);
+        setSummary(null);
+        setDashboardLoading(true);
+        setSummaryState({ loading: true, error: null, refreshing: false });
+      }
+      setSession({ status: 'authed', ...me });
+      if (me.settings?.language) setGuestLanguage(normalizeLanguage(me.settings.language));
+    };
+
+    const meP = api.me({ signal });
+    const dashP = api.dashboard({ signal, fast: true }).catch((error) => ({ __error: error }));
+
+    meP
       .then((me) => {
-        if (!me.hasCompletedOnboarding) {
-          const guest = readStoredLanguage();
-          me = { ...me, settings: { ...me.settings, language: guest } };
-        }
-        setSession({ status: 'authed', ...me });
-        if (me.settings?.language) setGuestLanguage(normalizeLanguage(me.settings.language));
+        if (signal.aborted) return;
+        applyMe(me);
       })
-      .catch((error) =>
-        setSession(error.needsLogin ? { status: 'anon' } : { status: 'error', kind: errorKind(error) }),
-      );
+      .catch((error) => {
+        if (isAbortError(error)) return;
+        setSession(error.needsLogin ? { status: 'anon' } : { status: 'error', kind: errorKind(error) });
+      });
+
+    dashP.then((data) => {
+      if (signal.aborted || data?.__error) return;
+      const current = sessionRef.current;
+      if (current.status === 'anon' || current.status === 'error') return;
+      if (
+        current.status === 'authed' &&
+        (!current.hasCompletedOnboarding || !placesReady(current.settings))
+      ) {
+        return;
+      }
+      const next = mergeDashboard(dashboardRef.current, data);
+      setDashboard(next);
+      setDashboardLoading(false);
+      const userId = current.user?.id;
+      if (userId) writeBoardSnapshot({ userId, dashboard: next, summary: summaryRef.current });
+    });
+
+    return () => controller.abort();
   }, []);
 
   const dataSettingsKey =
@@ -349,7 +469,7 @@ export default function App() {
           weather: session.settings?.weather,
           places: session.settings?.places,
           goal: session.settings?.weeklyGoalKm,
-          lang: session.settings?.language,
+          fx: session.settings?.fx,
           enabled: enabledWidgetsKey(session.settings?.layout),
           notion: session.notion,
           connected: session.connected,
@@ -360,8 +480,12 @@ export default function App() {
     if (session.status !== 'authed') return;
     if (!session.hasCompletedOnboarding) return;
     if (!placesReady(session.settings)) return;
-    void loadDashboard();
-    void loadSummary();
+    const controller = new AbortController();
+    void loadDashboard(controller.signal, {
+      silent: dashboardLooksReady(dashboardRef.current),
+    });
+    void loadSummary(false, controller.signal);
+    return () => controller.abort();
   }, [session.status, session.hasCompletedOnboarding, dataSettingsKey, loadDashboard, loadSummary]);
 
   const applyAccount = useCallback((next) => {
@@ -393,14 +517,44 @@ export default function App() {
     setDashboard((prev) => ({ ...prev, nutrition }));
   }, []);
 
-  const handleRefresh = async () => {
-    await Promise.all([loadSummary(true), loadDashboard()]);
-  };
+  const handleBoardChange = useCallback(async () => {
+    const dashboardPromise = loadDashboard();
+    if (briefingSyncTimer.current) clearTimeout(briefingSyncTimer.current);
+    briefingSyncTimer.current = setTimeout(() => {
+      briefingSyncTimer.current = null;
+      void loadSummary(true);
+    }, 1400);
+    await dashboardPromise;
+  }, [loadDashboard, loadSummary]);
 
-  const handleLogout = async () => {
+  useEffect(() => {
+    const minAwayMs = 2 * 60 * 1000;
+    let lastSync = Date.now();
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const current = sessionRef.current;
+      if (current.status !== 'authed' || !current.hasCompletedOnboarding) return;
+      if (!placesReady(current.settings)) return;
+      if (Date.now() - lastSync < minAwayMs) return;
+      lastSync = Date.now();
+      void Promise.all([loadSummary(true), loadDashboard()]);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      if (briefingSyncTimer.current) clearTimeout(briefingSyncTimer.current);
+    };
+  }, [loadDashboard, loadSummary]);
+
+  const handleLogout = useCallback(async () => {
     await api.logout().catch(() => {});
+    clearBoardSnapshot();
+    setDashboard(EMPTY_DASHBOARD);
+    setSummary(null);
+    setDashboardLoading(true);
+    setSummaryState({ loading: true, error: null, refreshing: false });
     signOut();
-  };
+  }, [signOut]);
 
   const onLanguageChange = useCallback(
     (next) => {
@@ -410,14 +564,21 @@ export default function App() {
         if (prev.status !== 'authed') return prev;
         return { ...prev, settings: { ...prev.settings, language } };
       });
-      if (session.status === 'authed') {
-        void api
-          .updateSettings({ language })
-          .then((updated) => applyAccount(updated))
-          .catch(() => {});
+
+      const current = sessionRef.current;
+      if (current.status !== 'authed') return;
+
+      if (current.hasCompletedOnboarding && placesReady(current.settings)) {
+        void loadSummary(false, undefined, { keepVisible: true, language });
       }
+      void api
+        .updateSettings({ language })
+        .then((updated) => applyAccount(updated))
+        .catch(() => {
+          /* Keep the optimistic language; widgets already use the new copy. */
+        });
     },
-    [applyAccount, session.status],
+    [applyAccount, loadSummary],
   );
 
   const language = resolveUiLanguage(session, guestLanguage);
@@ -441,7 +602,7 @@ export default function App() {
         applyAccount={applyAccount}
         applyLayout={applyLayout}
         applyNutrition={applyNutrition}
-        handleRefresh={handleRefresh}
+        handleBoardChange={handleBoardChange}
         handleLogout={handleLogout}
         signOut={signOut}
         onLanguageChange={onLanguageChange}

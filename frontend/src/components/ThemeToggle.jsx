@@ -12,6 +12,8 @@ export default function ThemeToggle({ theme, onToggle }) {
       onClick={onToggle}
       title={label}
       aria-label={label}
+      aria-pressed={goingDark}
+      data-sound="toggle"
       className="border-border bg-surface text-muted hover:text-foreground hover:bg-surface-hover grid size-9 place-items-center rounded-lg border transition"
     >
       {goingDark ? <MoonIcon className="size-4.5" /> : <SunIcon className="size-4.5" />}

@@ -1,7 +1,33 @@
-import { AlertIcon } from './icons.jsx';
+import { createContext, useContext, useEffect, useId, useState } from 'react';
+import { AlertIcon, ChevronDownIcon } from './icons.jsx';
 import { LOGIN_URL } from '../lib/api.js';
 import { cardErrorCopy } from '../lib/errors.js';
+import { citedItemClass, isSourceActive, useHighlight } from '../lib/highlight.jsx';
 import { useT } from '../lib/i18n.jsx';
+
+export const WidgetIdContext = createContext(null);
+
+const OPEN_STORAGE_KEY = 'dashboard-card-open';
+const NEVER_COLLAPSE = new Set(['summary', 'tip']);
+const DEFAULT_OPEN = new Set(['timeline', 'tasks']);
+
+function readOpenMap() {
+  try {
+    const raw = localStorage.getItem(OPEN_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOpen(id, open) {
+  try {
+    localStorage.setItem(OPEN_STORAGE_KEY, JSON.stringify({ ...readOpenMap(), [id]: open }));
+  } catch {
+    /* Ignore quota / private-mode failures. */
+  }
+}
 
 // Full class strings, not interpolated fragments, so Tailwind can see them.
 const TONES = {
@@ -106,24 +132,87 @@ export default function Card({
   empty,
   action = null,
   footer = null,
+  overlay = null,
+  sourceId = null,
   children,
 }) {
   const { t } = useT();
+  const { active, openedWidget } = useHighlight();
+  const widgetId = useContext(WidgetIdContext);
+  const collapsible = Boolean(widgetId) && !NEVER_COLLAPSE.has(widgetId);
+  const bodyDomId = useId();
+  const [open, setOpen] = useState(() => {
+    if (!collapsible) return true;
+    const stored = readOpenMap()[widgetId];
+    if (stored === true || stored === false) return stored;
+    return DEFAULT_OPEN.has(widgetId);
+  });
+
+  useEffect(() => {
+    if (!collapsible) return;
+    if (openedWidget?.widget === widgetId) {
+      setOpen(true);
+      writeOpen(widgetId, true);
+    }
+  }, [collapsible, openedWidget, widgetId]);
+
+  const toggle = () => {
+    setOpen((current) => {
+      const next = !current;
+      if (widgetId) writeOpen(widgetId, next);
+      return next;
+    });
+  };
+
   const isEmpty = !loading && !error && (empty ?? count === 0);
   const toneClasses = TONES[tone] ?? TONES.indigo;
   const emptyCopy = emptyText || t('empty');
   const chip = badge ?? (count === null ? null : count);
+  const cited = sourceId && isSourceActive(active, sourceId);
+  const showBody = !collapsible || open;
 
   return (
+    <>
     <section className="border-border bg-surface flex flex-col overflow-hidden rounded-2xl border shadow-sm">
-      <header className="border-border-subtle flex items-center justify-between gap-2 border-b px-5 py-4">
-        <h2 className="text-foreground flex min-w-0 items-center gap-2.5 text-sm font-semibold">
-          <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${toneClasses}`}>
-            {icon}
-          </span>
-          {title}
-        </h2>
-        <div className="flex shrink-0 items-center gap-2">
+      <header
+        className={`flex items-center gap-2 px-5 py-4 ${
+          showBody ? 'border-border-subtle border-b' : ''
+        }`}
+      >
+        {collapsible ? (
+          <h2 className="min-w-0 flex-1">
+            <button
+              type="button"
+              className="text-foreground flex w-full min-w-0 items-center gap-2.5 text-start text-sm font-semibold"
+              aria-expanded={open}
+              aria-controls={bodyDomId}
+              aria-label={open ? t('card.collapse', { title }) : t('card.expand', { title })}
+              onClick={toggle}
+            >
+              <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${toneClasses}`}>
+                {icon}
+              </span>
+              <span className="min-w-0 truncate">{title}</span>
+              <ChevronDownIcon
+                className={`text-muted size-4 shrink-0 transition-transform duration-200 ${
+                  open ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+          </h2>
+        ) : (
+          <h2 className="text-foreground flex min-w-0 flex-1 items-center gap-2.5 text-sm font-semibold">
+            <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${toneClasses}`}>
+              {icon}
+            </span>
+            {title}
+          </h2>
+        )}
+        <div
+          className="relative z-10 flex shrink-0 items-center gap-2"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
           {chip !== null && (
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs font-semibold tabular-nums ${toneClasses}`}
@@ -136,18 +225,27 @@ export default function Card({
       </header>
 
       {/* Capped so one long list cannot stretch its grid row past the others. */}
-      <div className="scroll-area max-h-112 flex-1 overflow-y-auto px-5 py-4">
+      <div
+        id={collapsible ? bodyDomId : undefined}
+        hidden={!showBody}
+        data-source-id={sourceId || undefined}
+        className={`scroll-area max-h-112 flex-1 overflow-y-auto px-5 py-4 ${citedItemClass(cited)}`}
+      >
         {loading && <Skeleton variant={skeleton} />}
-        {error && (
-          <CardError error={error} />
-        )}
-        {isEmpty && (
-          <p className="text-subtle py-8 text-center text-sm text-balance">{emptyCopy}</p>
-        )}
-        {!loading && !error && !isEmpty &&
-          (layout === 'list' ? <ul className="space-y-4">{children}</ul> : children)}
+        {error && <CardError error={error} />}
+        {isEmpty && <p className="text-subtle py-8 text-center text-sm text-balance">{emptyCopy}</p>}
+        {/* Keep tools/modals mounted while the card is collapsed, loading, or empty.
+            Native dialogs used to live in this hidden subtree and call showModal(),
+            which left the page inert with no visible window. */}
+        <div hidden={loading || Boolean(error) || isEmpty}>
+          {layout === 'list' ? <ul className="space-y-4">{children}</ul> : children}
+        </div>
       </div>
-      {footer && !loading && <div className="border-border-subtle border-t px-5 py-3">{footer}</div>}
+      {footer && !loading && showBody && (
+        <div className="border-border-subtle border-t px-5 py-3">{footer}</div>
+      )}
     </section>
+    {overlay}
+    </>
   );
 }

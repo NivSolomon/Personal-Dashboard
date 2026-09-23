@@ -1,4 +1,6 @@
+import { memo, useState } from 'react';
 import Card from './Card.jsx';
+import Modal from './Modal.jsx';
 import { BikeIcon, DumbbellIcon, DropletIcon, RunIcon, WindIcon } from './icons.jsx';
 import { useT } from '../lib/i18n.jsx';
 
@@ -97,8 +99,9 @@ function panelClasses(mode) {
   return 'bg-tone-amber text-tone-amber-fg';
 }
 
-export default function WeatherCard({ weather, loading, error }) {
+function WeatherCard({ weather, loading, error }) {
   const { t } = useT();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const nowSport = sportOf(weather?.current);
   const best = (weather?.bestWindows || []).filter((slot) => sportOf(slot).verdict !== 'skip');
   const later = best[0] || null;
@@ -125,84 +128,123 @@ export default function WeatherCard({ weather, loading, error }) {
       layout="plain"
       empty={!weather}
       emptyText={t('weather.empty')}
+      sourceId="weather"
+      action={
+        !loading &&
+        weather && (
+          <button
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            className={`inline-flex items-center rounded-lg px-2.5 py-1.5 text-xs font-medium ${panelClasses(mode)}`}
+          >
+            {t('scan.details')}
+          </button>
+        )
+      }
     >
       {weather && (
-        <div className="space-y-4">
-          <div className={`flex items-start gap-3 rounded-xl px-3 py-3 ${panelClasses(mode)}`}>
-            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-white/40 dark:bg-black/20">
-              <SportGlyph sport={glyphSport} className="size-4.5" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">{copy.title}</p>
-              <p className="mt-0.5 text-xs leading-relaxed opacity-90">
-                {reason || copy.detail}
-              </p>
-              {mode === 'later' && reason && (
-                <p className="mt-1 text-xs leading-relaxed opacity-80">{copy.detail}</p>
-              )}
-            </div>
+        <button
+          type="button"
+          onClick={() => setDetailsOpen(true)}
+          className={`flex w-full items-start gap-3 rounded-xl px-3 py-3 text-start ${panelClasses(mode)}`}
+        >
+          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-white/40 dark:bg-black/20">
+            <SportGlyph sport={glyphSport} className="size-4.5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{copy.title}</p>
+            <p className="mt-0.5 text-xs leading-relaxed opacity-90">{reason || copy.detail}</p>
           </div>
-
-          {best.length > 0 ? (
-            <div>
-              <p className="text-muted text-xs font-semibold">{t('weather.when')}</p>
-              <ul className="mt-2 grid grid-cols-2 gap-2">
-                {best.map((slot) => {
-                  const sport = sportOf(slot);
-                  return (
-                    <li
-                      key={slot.at}
-                      className="border-border-subtle bg-tone-neutral rounded-xl border px-3 py-2.5"
-                    >
-                      <p className="text-foreground text-lg font-semibold tabular-nums">
-                        {hourLabel(slot.hour)}
-                      </p>
-                      <p className="text-foreground mt-0.5 flex items-center gap-1.5 text-xs font-medium">
-                        <SportGlyph sport={sport.bestFor} className="size-3.5" />
-                        {t(`weather.sport.${sport.bestFor}`)}
-                      </p>
-                      <p className="text-muted mt-1 text-xs">{flagReason(sport.flags, slot, t)}</p>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ) : (
-            <div>
-              <p className="text-muted text-xs font-semibold">{t('weather.when')}</p>
-              <p className="text-muted mt-1.5 text-sm leading-relaxed">{t('weather.noWindow')}</p>
-              {coolest.length > 0 && (
-                <p className="text-subtle mt-2 text-xs">
-                  {coolest.every((slot) => slot.temp >= 27)
-                    ? t('weather.eveningHot', { temp: Math.min(...coolest.map((slot) => slot.temp)) })
-                    : t('weather.coolerHours', {
-                        hours: coolest
-                          .map((slot) => `${hourLabel(slot.hour)} · ${slot.temp}°`)
-                          .join(' · '),
-                      })}
-                </p>
-              )}
-            </div>
-          )}
-
-          {(weather.rainExpected || nowSport.flags.includes('wind')) && best.length > 0 && (
-            <p className="text-muted flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-              {weather.rainExpected && (
-                <span className="inline-flex items-center gap-1">
-                  <DropletIcon className="size-3.5" />
-                  {t('weather.rainDay')}
-                </span>
-              )}
-              {nowSport.flags.includes('wind') && (
-                <span className="inline-flex items-center gap-1">
-                  <WindIcon className="size-3.5" />
-                  {t('weather.strongWind')}
-                </span>
-              )}
-            </p>
-          )}
-        </div>
+        </button>
       )}
+
+      <Modal
+        open={detailsOpen}
+        size="lg"
+        title={t('widget.weather.title')}
+        description={copy.title}
+        onClose={() => setDetailsOpen(false)}
+      >
+        {weather && (
+          <div className="space-y-4">
+            <div className={`flex items-start gap-3 rounded-xl px-3 py-3 ${panelClasses(mode)}`}>
+              <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-white/40 dark:bg-black/20">
+                <SportGlyph sport={glyphSport} className="size-4.5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">{copy.title}</p>
+                <p className="mt-0.5 text-xs leading-relaxed opacity-90">
+                  {reason || copy.detail}
+                </p>
+                {mode === 'later' && reason && (
+                  <p className="mt-1 text-xs leading-relaxed opacity-80">{copy.detail}</p>
+                )}
+              </div>
+            </div>
+
+            {best.length > 0 ? (
+              <div>
+                <p className="text-muted text-xs font-semibold">{t('weather.when')}</p>
+                <ul className="mt-2 grid grid-cols-2 gap-2">
+                  {best.map((slot) => {
+                    const sport = sportOf(slot);
+                    return (
+                      <li
+                        key={slot.at}
+                        className="border-border-subtle bg-tone-neutral rounded-xl border px-3 py-2.5"
+                      >
+                        <p className="text-foreground text-lg font-semibold tabular-nums">
+                          {hourLabel(slot.hour)}
+                        </p>
+                        <p className="text-foreground mt-0.5 flex items-center gap-1.5 text-xs font-medium">
+                          <SportGlyph sport={sport.bestFor} className="size-3.5" />
+                          {t(`weather.sport.${sport.bestFor}`)}
+                        </p>
+                        <p className="text-muted mt-1 text-xs">{flagReason(sport.flags, slot, t)}</p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : (
+              <div>
+                <p className="text-muted text-xs font-semibold">{t('weather.when')}</p>
+                <p className="text-muted mt-1.5 text-sm leading-relaxed">{t('weather.noWindow')}</p>
+                {coolest.length > 0 && (
+                  <p className="text-subtle mt-2 text-xs">
+                    {coolest.every((slot) => slot.temp >= 27)
+                      ? t('weather.eveningHot', { temp: Math.min(...coolest.map((slot) => slot.temp)) })
+                      : t('weather.coolerHours', {
+                          hours: coolest
+                            .map((slot) => `${hourLabel(slot.hour)} · ${slot.temp}°`)
+                            .join(' · '),
+                        })}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {(weather.rainExpected || nowSport.flags.includes('wind')) && best.length > 0 && (
+              <p className="text-muted flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                {weather.rainExpected && (
+                  <span className="inline-flex items-center gap-1">
+                    <DropletIcon className="size-3.5" />
+                    {t('weather.rainDay')}
+                  </span>
+                )}
+                {nowSport.flags.includes('wind') && (
+                  <span className="inline-flex items-center gap-1">
+                    <WindIcon className="size-3.5" />
+                    {t('weather.strongWind')}
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
     </Card>
   );
 }
+
+export default memo(WeatherCard);

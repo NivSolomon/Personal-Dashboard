@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
+import { useEffect, useId, useState } from 'react';
+import { api, isAbortError } from '../lib/api.js';
 import { watchlistErrorText } from '../lib/errors.js';
 import { ChartIcon, PlusIcon } from './icons.jsx';
 import { alertOpLabel, currencyLabel, moneyLabel } from '../lib/format.js';
@@ -10,11 +10,13 @@ const inputClass =
 
 export default function WatchlistEditor({ onAdded, busy = false, compact = false }) {
   const { t } = useT();
+  const listId = useId();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [picked, setPicked] = useState(null);
+  const [active, setActive] = useState(-1);
   const [kind, setKind] = useState('stock');
   const [withAlert, setWithAlert] = useState(false);
   const [op, setOp] = useState('above');
@@ -36,19 +38,26 @@ export default function WatchlistEditor({ onAdded, busy = false, compact = false
       return undefined;
     }
 
+    const controller = new AbortController();
     const handle = setTimeout(() => {
       setSearching(true);
       api
-        .searchQuotes(q)
+        .searchQuotes(q, { signal: controller.signal })
         .then((body) => {
           setResults(body.quotes || []);
           setSearched(true);
+          setActive(-1);
         })
-        .catch((err) => setError(err.code || 'search_unavailable'))
+        .catch((err) => {
+          if (!isAbortError(err)) setError(err.code || 'search_unavailable');
+        })
         .finally(() => setSearching(false));
     }, 280);
 
-    return () => clearTimeout(handle);
+    return () => {
+      clearTimeout(handle);
+      controller.abort();
+    };
   }, [query, picked]);
 
   useEffect(() => {
@@ -59,18 +68,18 @@ export default function WatchlistEditor({ onAdded, busy = false, compact = false
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     const handle = setTimeout(
       () => {
         api
-          .quote(symbol)
+          .quote(symbol, { signal: controller.signal })
           .then((body) => {
             if (!cancelled) setQuoteMeta(body.quote || null);
           })
           .catch((err) => {
-            if (!cancelled) {
-              setQuoteMeta(null);
-              if (err.code === 'unsupported_currency') setError('unsupported_currency');
-            }
+            if (cancelled || isAbortError(err)) return;
+            setQuoteMeta(null);
+            if (err.code === 'unsupported_currency') setError('unsupported_currency');
           });
       },
       picked ? 0 : 350,
@@ -79,6 +88,7 @@ export default function WatchlistEditor({ onAdded, busy = false, compact = false
     return () => {
       cancelled = true;
       clearTimeout(handle);
+      controller.abort();
     };
   }, [withAlert, picked, query]);
 
@@ -88,14 +98,39 @@ export default function WatchlistEditor({ onAdded, busy = false, compact = false
     setKind(quote.kind || 'stock');
     setResults([]);
     setSearched(false);
+    setActive(-1);
     setError(null);
     setQuoteMeta(quote.currency ? { currency: quote.currency, price: quote.price ?? null } : null);
+  };
+
+  const onSearchKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setResults([]);
+      setSearched(false);
+      setActive(-1);
+      return;
+    }
+    if (!results.length) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActive((index) => (index + 1) % results.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActive((index) => (index <= 0 ? results.length - 1 : index - 1));
+    } else if (event.key === 'Enter' && active >= 0 && results[active]) {
+      event.preventDefault();
+      choose(results[active]);
+    }
   };
 
   const submit = async (event) => {
     event.preventDefault();
     const symbol = (picked?.symbol || query).trim();
-    if (!symbol || saving || busy) return;
+    if (!symbol) {
+      setError('invalid_symbol');
+      return;
+    }
+    if (saving || busy) return;
     const alertPrice = Number(price);
     if (withAlert && (!Number.isFinite(alertPrice) || alertPrice <= 0)) {
       setError('invalid_price');
@@ -143,25 +178,48 @@ export default function WatchlistEditor({ onAdded, busy = false, compact = false
             setPicked(null);
             setError(null);
             setSearched(false);
+            setActive(-1);
           }}
           placeholder="AAPL, VOO, TEVA.TA…"
           autoComplete="off"
           maxLength={40}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={Boolean(results.length > 0 || searching || (searched && !picked))}
+          aria-controls={listId}
+          aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
+          aria-label={t('widget.watchlist.title')}
+          onKeyDown={onSearchKeyDown}
         />
         {(results.length > 0 || searching || (searched && !picked)) && (
-          <ul className="border-border bg-surface absolute inset-x-0 z-20 mt-1 max-h-48 overflow-auto rounded-lg border shadow-lg">
+          <ul
+            id={listId}
+            role="listbox"
+            className="border-border bg-surface absolute inset-x-0 z-20 mt-1 max-h-48 overflow-auto rounded-lg border shadow-lg"
+          >
             {searching && results.length === 0 && (
-              <li className="text-muted px-3 py-2 text-xs">{t('watch.searching')}</li>
+              <li role="status" className="text-muted px-3 py-2 text-xs">
+                {t('watch.searching')}
+              </li>
             )}
             {!searching && searched && results.length === 0 && (
-              <li className="text-muted px-3 py-2 text-xs">{t('watch.noResults')}</li>
+              <li role="status" className="text-muted px-3 py-2 text-xs">
+                {t('watch.noResults')}
+              </li>
             )}
-            {results.map((quote) => (
-              <li key={quote.symbol}>
+            {results.map((quote, index) => (
+              <li key={quote.symbol} role="presentation">
                 <button
                   type="button"
+                  id={`${listId}-${index}`}
+                  role="option"
+                  aria-selected={index === active}
+                  onMouseEnter={() => setActive(index)}
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => choose(quote)}
-                  className="hover:bg-surface-hover flex w-full items-center justify-between gap-3 px-3 py-2 text-start"
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-start ${
+                    index === active ? 'bg-surface-hover' : 'hover:bg-surface-hover'
+                  }`}
                 >
                   <span className="min-w-0">
                     <span className="text-foreground block truncate text-sm font-medium">

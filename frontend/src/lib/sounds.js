@@ -22,8 +22,16 @@ function audio() {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return null;
   if (!ctx) ctx = new Ctx();
-  if (ctx.state === 'suspended') void ctx.resume();
   return ctx;
+}
+
+/** Browsers keep AudioContext suspended until a user gesture; tones started
+ *  before resume() finishes are silent. Call this from pointer/key handlers. */
+export function unlockAudio() {
+  const context = audio();
+  if (!context) return null;
+  if (context.state === 'suspended') void context.resume();
+  return context;
 }
 
 function tone(context, { freq, endFreq, duration = 0.07, gain = 0.045, type = 'sine', delay = 0 }) {
@@ -42,21 +50,77 @@ function tone(context, { freq, endFreq, duration = 0.07, gain = 0.045, type = 's
   osc.stop(start + duration + 0.02);
 }
 
+let noiseBuffer = null;
+
+function noise(context) {
+  if (noiseBuffer && noiseBuffer.sampleRate === context.sampleRate) return noiseBuffer;
+  const length = Math.floor(context.sampleRate * 0.08);
+  const buffer = context.createBuffer(1, length, context.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i += 1) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+  }
+  noiseBuffer = buffer;
+  return buffer;
+}
+
+/** Soft key-tick: bandpass noise plus a quiet falling sine, not a raw beep. */
+function tick(context, { delay = 0, bright = 2100, body = 390, gain = 0.042 } = {}) {
+  const start = context.currentTime + delay;
+  const src = context.createBufferSource();
+  src.buffer = noise(context);
+  const filter = context.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(bright, start);
+  filter.Q.setValueAtTime(1.05, start);
+  const air = context.createGain();
+  air.gain.setValueAtTime(0.0001, start);
+  air.gain.exponentialRampToValueAtTime(gain, start + 0.003);
+  air.gain.exponentialRampToValueAtTime(0.0001, start + 0.028);
+  src.connect(filter);
+  filter.connect(air);
+  air.connect(context.destination);
+  src.start(start);
+  src.stop(start + 0.04);
+
+  const osc = context.createOscillator();
+  const low = context.createBiquadFilter();
+  const bodyAmp = context.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(body, start);
+  osc.frequency.exponentialRampToValueAtTime(body * 0.72, start + 0.05);
+  low.type = 'lowpass';
+  low.frequency.setValueAtTime(1400, start);
+  low.frequency.exponentialRampToValueAtTime(520, start + 0.05);
+  bodyAmp.gain.setValueAtTime(0.0001, start);
+  bodyAmp.gain.exponentialRampToValueAtTime(gain * 0.38, start + 0.005);
+  bodyAmp.gain.exponentialRampToValueAtTime(0.0001, start + 0.055);
+  osc.connect(low);
+  low.connect(bodyAmp);
+  bodyAmp.connect(context.destination);
+  osc.start(start);
+  osc.stop(start + 0.07);
+}
+
 const KINDS = {
-  tap: (c) => tone(c, { freq: 920, duration: 0.045, gain: 0.035, type: 'triangle' }),
-  nav: (c) => tone(c, { freq: 640, endFreq: 880, duration: 0.08, gain: 0.03, type: 'sine' }),
+  tap: (c) => tick(c),
+  nav: (c) => tick(c, { bright: 1650, body: 320, gain: 0.036 }),
+  focus: (c) => tick(c, { bright: 2550, body: 520, gain: 0.028 }),
   toggle: (c) => {
-    tone(c, { freq: 620, duration: 0.05, gain: 0.03, type: 'triangle' });
-    tone(c, { freq: 880, duration: 0.07, gain: 0.032, type: 'sine', delay: 0.05 });
+    tick(c, { bright: 1900, body: 340, gain: 0.034 });
+    tick(c, { delay: 0.042, bright: 2400, body: 460, gain: 0.03 });
   },
   success: (c) => {
     tone(c, { freq: 523, duration: 0.07, gain: 0.035, type: 'sine' });
     tone(c, { freq: 659, duration: 0.08, gain: 0.035, type: 'sine', delay: 0.07 });
     tone(c, { freq: 784, duration: 0.12, gain: 0.04, type: 'sine', delay: 0.14 });
   },
-  complete: (c) => {
-    tone(c, { freq: 698, duration: 0.08, gain: 0.038, type: 'sine' });
-    tone(c, { freq: 880, duration: 0.14, gain: 0.04, type: 'triangle', delay: 0.08 });
+  celebrate: (c) => {
+    tone(c, { freq: 523, duration: 0.09, gain: 0.036, type: 'sine' });
+    tone(c, { freq: 659, duration: 0.09, gain: 0.036, type: 'sine', delay: 0.09 });
+    tone(c, { freq: 784, duration: 0.1, gain: 0.038, type: 'sine', delay: 0.18 });
+    tone(c, { freq: 1046, duration: 0.22, gain: 0.044, type: 'triangle', delay: 0.28 });
+    tone(c, { freq: 1568, duration: 0.16, gain: 0.02, type: 'sine', delay: 0.36 });
   },
   warn: (c) => tone(c, { freq: 280, endFreq: 170, duration: 0.14, gain: 0.04, type: 'square' }),
   error: (c) => {
@@ -73,11 +137,19 @@ const KINDS = {
 export function playUi(kind = 'tap', { force = false } = {}) {
   if (!force && !enabled()) return;
   const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  if (!force && now - lastPlayAt < 35 && kind === 'tap') return;
+  if (!force && now - lastPlayAt < 50) return;
   lastPlayAt = now;
-  const context = audio();
+  const context = unlockAudio();
   if (!context) return;
-  (KINDS[kind] || KINDS.tap)(context);
+  const run = () => {
+    if (context.state === 'closed') return;
+    (KINDS[kind] || KINDS.tap)(context);
+  };
+  if (context.state === 'suspended') {
+    void context.resume().then(run).catch(() => {});
+    return;
+  }
+  run();
 }
 
 export function setSoundsEnabled(on) {

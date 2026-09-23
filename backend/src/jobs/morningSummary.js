@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { config } from '../config.js';
 import { getSummary, listActiveUsers } from '../store/db.js';
 import { localDateKey } from '../lib/time.js';
+import { mapLimit } from '../lib/pool.js';
 import { buildSummaryForUser } from '../services/morningSummary.js';
 
 /** The user's own wall-clock hour, which is what their delivery time refers to. */
@@ -19,25 +20,26 @@ function localHour(timeZone, now) {
  */
 export async function runDueSummaries(logger, now = new Date()) {
   const users = await listActiveUsers();
-  const results = [];
+  const due = [];
 
   for (const user of users) {
     const { timeZone, summaryHour } = user.settings;
+    if (localHour(timeZone, now) !== summaryHour) continue;
+    const existing = await getSummary(user.id);
+    if (existing?.date === localDateKey(timeZone, now)) continue;
+    due.push(user);
+  }
+
+  return mapLimit(due, 3, async (user) => {
     try {
-      if (localHour(timeZone, now) !== summaryHour) continue;
-
-      const existing = await getSummary(user.id);
-      if (existing?.date === localDateKey(timeZone, now)) continue;
-
       const summary = await buildSummaryForUser(user.id, { logger });
-      results.push({ userId: user.id, ok: true, summary });
-      logger?.info({ userId: user.id, timeZone }, 'morning summary generated on schedule');
+      logger?.info({ userId: user.id, timeZone: user.settings.timeZone }, 'morning summary generated on schedule');
+      return { userId: user.id, ok: true, summary };
     } catch (error) {
       logger?.error({ err: error, userId: user.id }, 'morning summary failed for user');
-      results.push({ userId: user.id, ok: false, error: error.message });
+      return { userId: user.id, ok: false, error: error.message };
     }
-  }
-  return results;
+  });
 }
 
 /** Ignores delivery hours and rebuilds for everyone; used by the manual script. */
@@ -48,17 +50,15 @@ export async function runMorningSummaryForAllUsers(logger) {
     return [];
   }
 
-  const results = [];
-  for (const user of users) {
+  return mapLimit(users, 3, async (user) => {
     try {
       const summary = await buildSummaryForUser(user.id, { logger });
-      results.push({ userId: user.id, ok: true, summary });
+      return { userId: user.id, ok: true, summary };
     } catch (error) {
       logger?.error({ err: error, userId: user.id }, 'morning summary job failed for user');
-      results.push({ userId: user.id, ok: false, error: error.message });
+      return { userId: user.id, ok: false, error: error.message };
     }
-  }
-  return results;
+  });
 }
 
 export function startMorningSummaryJob(logger) {

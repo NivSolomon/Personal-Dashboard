@@ -1,14 +1,13 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DndContext, closestCenter } from '@dnd-kit/core';
-import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { api } from '../lib/api.js';
 import { dragIds, useSortSensors } from '../lib/dnd.js';
-import { WIDGET_META, gridWidgets, pinnedWidgets, reorderWidgets } from '../lib/widgets.js';
+import { AROUND_CAP, gridWidgets, isDayWidget, pinnedWidgets, reorderWidgets } from '../lib/widgets.js';
 import { useT } from '../lib/i18n.jsx';
 import SummaryBanner from './SummaryBanner.jsx';
 import DailyTipBanner from './DailyTipBanner.jsx';
-import ScheduleCard from './ScheduleCard.jsx';
 import TasksCard from './TasksCard.jsx';
 import EmailsCard from './EmailsCard.jsx';
 import ParcelsCard from './ParcelsCard.jsx';
@@ -18,10 +17,46 @@ import ActivityCard from './ActivityCard.jsx';
 import UsdCard from './UsdCard.jsx';
 import WatchlistCard from './WatchlistCard.jsx';
 import NutritionCard from './NutritionCard.jsx';
+import TimelineCard from './TimelineCard.jsx';
+import AskWeekCard from './AskWeekCard.jsx';
 import SortableTile from './SortableTile.jsx';
+import { HighlightProvider } from '../lib/highlight.jsx';
 
-function spanClass(id) {
-  return WIDGET_META[id]?.span === 2 ? 'sm:col-span-2 xl:col-span-2' : '';
+const AROUND_STORAGE = 'dashboard-around-open';
+
+function readAroundOpen() {
+  try {
+    return localStorage.getItem(AROUND_STORAGE) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeAroundOpen(open) {
+  try {
+    localStorage.setItem(AROUND_STORAGE, open ? '1' : '0');
+  } catch {
+    /* Ignore quota / private-mode failures. */
+  }
+}
+
+function BoardColumn({ title, items, tiles, editing, footer = null }) {
+  if (!items.length) return null;
+  return (
+    <section className="min-w-0">
+      <h2 className="text-muted mb-3 text-sm font-semibold">{title}</h2>
+      <SortableContext items={items.map((widget) => widget.id)} strategy={verticalListSortingStrategy}>
+        <div className="space-y-3">
+          {items.map((widget) => (
+            <SortableTile key={widget.id} id={widget.id} disabled={!editing}>
+              {tiles[widget.id]}
+            </SortableTile>
+          ))}
+        </div>
+      </SortableContext>
+      {footer}
+    </section>
+  );
 }
 
 export default function Dashboard({
@@ -30,7 +65,6 @@ export default function Dashboard({
   dashboardLoading,
   summary,
   summaryState,
-  onRefresh,
   onAccountChange,
   onLayoutChange,
   onNutritionChange,
@@ -38,8 +72,10 @@ export default function Dashboard({
   editing = false,
 }) {
   const { t } = useT();
+  const [aroundOpen, setAroundOpen] = useState(readAroundOpen);
   const saveGen = useRef(0);
   const sensors = useSortSensors();
+  const pendingMail = Boolean(dashboard.partial);
   const errorFor = (source) => dashboard.errors?.find((e) => e.source === source) || null;
   const layout = session.settings?.layout;
   const shown = gridWidgets(session);
@@ -88,13 +124,22 @@ export default function Dashboard({
   const timeZone = session.timeZone;
   const tiles = useMemo(
     () => ({
+      tip: (
+        <DailyTipBanner
+          tip={summary?.dailyTip}
+          sources={summary?.tipSources}
+          load={summary?.stats?.busyness?.level}
+          loading={summaryState.loading}
+          refreshing={summaryState.refreshing}
+        />
+      ),
       summary: (
         <SummaryBanner
           summary={summary}
           loading={summaryState.loading}
           refreshing={summaryState.refreshing}
           error={summaryState.error}
-          onRefresh={onRefresh}
+          onRetry={onReload}
         />
       ),
       weather: (
@@ -102,16 +147,6 @@ export default function Dashboard({
           weather={dashboard.weather}
           loading={dashboardLoading}
           error={errorFor('weather') || errorFor('all')}
-        />
-      ),
-      schedule: (
-        <ScheduleCard
-          events={dashboard.events}
-          timeZone={timeZone}
-          loading={dashboardLoading}
-          error={errorFor('events') || errorFor('all')}
-          onChanged={onReload}
-          places={places}
         />
       ),
       tasks: (
@@ -127,7 +162,8 @@ export default function Dashboard({
       emails: (
         <EmailsCard
           emails={dashboard.emails}
-          loading={dashboardLoading}
+          timeZone={timeZone}
+          loading={dashboardLoading || (pendingMail && !(dashboard.emails || []).length)}
           error={errorFor('emails') || errorFor('all')}
         />
       ),
@@ -135,7 +171,7 @@ export default function Dashboard({
         <ParcelsCard
           parcels={dashboard.parcels}
           timeZone={timeZone}
-          loading={dashboardLoading}
+          loading={dashboardLoading || (pendingMail && !(dashboard.parcels || []).length)}
           error={errorFor('parcels') || errorFor('all')}
         />
       ),
@@ -143,6 +179,7 @@ export default function Dashboard({
         <NutritionCard
           nutrition={dashboard.nutrition}
           calorieGoal={session.settings?.calorieGoal}
+          timeZone={timeZone}
           loading={dashboardLoading}
           error={errorFor('nutrition') || errorFor('all')}
           onChange={onNutritionChange}
@@ -167,8 +204,10 @@ export default function Dashboard({
       usd: (
         <UsdCard
           quote={dashboard.fx}
+          settings={session.settings}
           loading={dashboardLoading}
           error={errorFor('fx') || errorFor('all')}
+          onAccountChange={onAccountChange}
         />
       ),
       watchlist: (
@@ -179,18 +218,46 @@ export default function Dashboard({
           onAccountChange={onAccountChange}
         />
       ),
+      timeline: (
+        <TimelineCard
+          plan={dashboard.dayPlan}
+          events={dashboard.events}
+          timeZone={timeZone}
+          loading={dashboardLoading}
+          error={errorFor('events') || errorFor('all')}
+          onChanged={onReload}
+          places={places}
+        />
+      ),
+      ask: <AskWeekCard />,
     }),
     [
       connected.strava,
-      dashboard,
+      dashboard.activity,
+      dashboard.emails,
+      dashboard.errors,
+      dashboard.events,
+      dashboard.fx,
+      dashboard.notion,
+      dashboard.nutrition,
+      dashboard.parcels,
+      dashboard.tasks,
+      dashboard.watchlist,
+      dashboard.weather,
+      dashboard.dayPlan,
+      dashboard.events,
+      dashboard.partial,
+      summary?.dailyTip,
+      summary?.tipSources,
+      summary?.stats?.busyness?.level,
       dashboardLoading,
       hasWorkouts,
       onAccountChange,
       onNutritionChange,
-      onRefresh,
       onReload,
       places,
       session.settings?.calorieGoal,
+      session.settings?.fx,
       summary,
       summaryState.error,
       summaryState.loading,
@@ -199,18 +266,28 @@ export default function Dashboard({
     ],
   );
 
+  const day = shown.filter((widget) => isDayWidget(widget.id));
+  const more = shown.filter((widget) => !isDayWidget(widget.id));
+  const aroundHidden = Math.max(0, more.length - AROUND_CAP);
+  const aroundItems = editing || aroundOpen ? more : more.slice(0, AROUND_CAP);
+  const toggleAround = () => {
+    setAroundOpen((current) => {
+      const next = !current;
+      writeAroundOpen(next);
+      return next;
+    });
+  };
+
   return (
-    <>
-      {pinned.some((widget) => widget.id === 'tip') && (
-        <DailyTipBanner
-          tip={summary?.dailyTip}
-          load={summary?.stats?.busyness?.level}
-          loading={summaryState.loading}
-        />
-      )}
+    <HighlightProvider>
+      <div className="space-y-6">
+        {pinned.map((widget) => (
+          <div key={widget.id}>{tiles[widget.id]}</div>
+        ))}
+      </div>
 
       {editing && (
-        <p className="text-muted mb-4 text-sm">
+        <p className="text-muted mt-6 mb-4 text-sm">
           {t('dash.editingHint')}{' '}
           <Link to="/settings#layout" className="text-foreground font-medium underline-offset-2 hover:underline">
             {t('dash.editingSettings')}
@@ -219,21 +296,33 @@ export default function Dashboard({
       )}
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGridDragEnd}>
-        <SortableContext items={shown.map((widget) => widget.id)} strategy={rectSortingStrategy}>
-          <div className={`grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3 ${editing ? 'pt-3' : ''}`}>
-            {shown.map((widget) => (
-              <SortableTile
-                key={widget.id}
-                id={widget.id}
-                disabled={!editing}
-                className={spanClass(widget.id)}
-              >
-                {tiles[widget.id]}
-              </SortableTile>
-            ))}
-          </div>
-        </SortableContext>
+        <div
+          className={`grid grid-cols-1 items-start gap-8 lg:grid-cols-2 ${
+            editing ? 'pt-1' : 'mt-6'
+          }`}
+        >
+          <BoardColumn title={t('dash.section.today')} items={day} tiles={tiles} editing={editing} />
+          <BoardColumn
+            title={t('dash.section.more')}
+            items={aroundItems}
+            tiles={tiles}
+            editing={editing}
+            footer={
+              !editing && aroundHidden > 0 ? (
+                <button
+                  type="button"
+                  onClick={toggleAround}
+                  className="text-muted hover:text-foreground mt-3 text-sm font-medium"
+                >
+                  {aroundOpen
+                    ? t('dash.lessAround')
+                    : t('dash.moreAroundCount', { n: aroundHidden })}
+                </button>
+              ) : null
+            }
+          />
+        </div>
       </DndContext>
-    </>
+    </HighlightProvider>
   );
 }

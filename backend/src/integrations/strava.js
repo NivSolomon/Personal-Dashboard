@@ -50,6 +50,7 @@ async function tokenRequest(body) {
       client_secret: config.strava.clientSecret,
       ...body,
     }),
+    signal: AbortSignal.timeout(10000),
   });
   if (!response.ok) {
     const text = await response.text().catch(() => '');
@@ -84,6 +85,7 @@ async function accessTokenFor(userId) {
 async function callApi(path, token, params = {}) {
   const response = await fetch(`${API_URL}${path}?${new URLSearchParams(params)}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10000),
   });
   if (!response.ok) {
     const text = await response.text().catch(() => '');

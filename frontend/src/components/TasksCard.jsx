@@ -1,4 +1,4 @@
-import { useCallback, useId, useState } from 'react';
+import { memo, useCallback, useId, useState } from 'react';
 import Card from './Card.jsx';
 import Modal from './Modal.jsx';
 import ConfirmDelete from './ConfirmDelete.jsx';
@@ -9,8 +9,10 @@ import { CheckCircleIcon, PlusIcon, TrashIcon } from './icons.jsx';
 import { dueLabel } from '../lib/format.js';
 import { api, LOGIN_URL } from '../lib/api.js';
 import { eventIssueText } from '../lib/errors.js';
-import { hasIssues, taskFormIssues } from '../lib/validate.js';
+import { clockFloor, hasIssues, isClockBeforeNow, localDateKey, taskFormIssues } from '../lib/validate.js';
+import { citedItemClass, isSourceActive, useHighlight } from '../lib/highlight.jsx';
 import { useT } from '../lib/i18n.jsx';
+import { SCAN_PREVIEW } from '../lib/widgets.js';
 
 const DUE_TONES = {
   overdue: 'bg-tone-rose text-tone-rose-fg',
@@ -21,8 +23,9 @@ const DUE_TONES = {
 const fieldClass =
   'border-border bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm';
 
-export default function TasksCard({ tasks = [], timeZone, loading, error, onChanged, places }) {
+function TasksCard({ tasks = [], timeZone, loading, error, onChanged, places }) {
   const { t } = useT();
+  const { active } = useHighlight();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [due, setDue] = useState('');
@@ -38,11 +41,14 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
   const [undoing, setUndoing] = useState(false);
   const [actionError, setActionError] = useState(null);
   const [attempted, setAttempted] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const titleFieldId = useId();
   const dueFieldId = useId();
   const errorId = useId();
 
   const visible = tasks.filter((task) => !doneIds.includes(task.id) && !removedIds.includes(task.id));
+  const preview = visible.slice(0, SCAN_PREVIEW);
+  const extraCount = Math.max(0, visible.length - preview.length);
 
   const fail = (error) => {
     setActionError(
@@ -60,7 +66,7 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
     setAttempted(false);
   };
 
-  const issues = taskFormIssues({ title, due, dueTime, location });
+  const issues = taskFormIssues({ title, due, dueTime, location }, { timeZone });
   const canSubmit = !hasIssues(issues);
   const showIssue = (field) => attempted && issues[field];
 
@@ -84,7 +90,17 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
       setOpen(false);
       await onChanged?.();
     } catch (error) {
-      fail(error);
+      if (
+        error?.code === 'due_in_past' ||
+        error?.code === 'time_in_past' ||
+        error?.code === 'invalid_due' ||
+        error?.code === 'invalid_time' ||
+        error?.code === 'invalid_title'
+      ) {
+        setActionError('invalid');
+      } else {
+        fail(error);
+      }
     } finally {
       setCreating(false);
     }
@@ -142,6 +158,50 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
     }
   };
 
+  const taskRow = (task) => {
+    const dueInfo = dueLabel(task.due, timeZone);
+    const busy = completingId === task.id;
+    return (
+      <li
+        key={task.id}
+        data-source-id={`task:${task.id}`}
+        className={`flex items-start gap-3 rounded-lg ${citedItemClass(isSourceActive(active, `task:${task.id}`))}`}
+      >
+        <button
+          type="button"
+          aria-label={t('tasks.completeNamed', { title: task.title })}
+          disabled={busy}
+          onClick={() => setPendingComplete(task)}
+          className="border-tone-green-fg/60 text-tone-green-fg hover:bg-tone-green mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-2 disabled:opacity-50"
+        >
+          {busy ? <span className="bg-tone-green-fg size-2 rounded-full" /> : null}
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="text-foreground font-medium">{task.title}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="text-subtle text-xs">{task.listTitle}</span>
+            {dueInfo && (
+              <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${DUE_TONES[dueInfo.tone]}`}>
+                {dueInfo.text}
+              </span>
+            )}
+          </div>
+          {task.notes && <p className="text-muted mt-1 line-clamp-2 text-xs">{task.notes}</p>}
+        </div>
+        <button
+          type="button"
+          title={t('tasks.deleteTask')}
+          aria-label={t('tasks.deleteNamed', { title: task.title })}
+          disabled={busy}
+          onClick={() => setPendingDelete(task)}
+          className="text-muted hover:text-tone-rose-fg mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg disabled:opacity-50"
+        >
+          <TrashIcon className="size-3.5" />
+        </button>
+      </li>
+    );
+  };
+
   return (
     <>
       <Card
@@ -174,65 +234,54 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
                 t('tasks.updateFail')
               )}
             </p>
+          ) : extraCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setListOpen(true)}
+              className="text-muted hover:text-foreground text-xs font-medium"
+            >
+              {t('scan.moreItems', { n: extraCount })}
+            </button>
           ) : null
         }
         action={
           !loading && (
-            <button
-              type="button"
-              onClick={() => setOpen(true)}
-              className="bg-tone-green text-tone-green-fg inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium"
-            >
-              <PlusIcon className="size-3.5" />
-              {t('tasks.add')}
-            </button>
+            <div className="flex items-center gap-1.5">
+              {visible.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setListOpen(true)}
+                  className="border-border text-foreground hover:bg-surface-hover rounded-lg border px-2.5 py-1.5 text-xs font-medium"
+                >
+                  {t('scan.open')}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="bg-tone-green text-tone-green-fg inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+              >
+                <PlusIcon className="size-3.5" />
+                {t('tasks.add')}
+              </button>
+            </div>
           )
         }
       >
-        {visible.map((task) => {
-          const dueInfo = dueLabel(task.due, timeZone);
-          const busy = completingId === task.id;
-          return (
-            <li key={task.id} className="flex items-start gap-3">
-              <button
-                type="button"
-                aria-label={t('tasks.completeNamed', { title: task.title })}
-                disabled={busy}
-                onClick={() => setPendingComplete(task)}
-                className="border-tone-green-fg/60 text-tone-green-fg hover:bg-tone-green mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-2 disabled:opacity-50"
-              >
-                {busy ? <span className="bg-tone-green-fg size-2 rounded-full" /> : null}
-              </button>
-              <div className="min-w-0 flex-1">
-                <p className="text-foreground font-medium">{task.title}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <span className="text-subtle text-xs">{task.listTitle}</span>
-                  {dueInfo && (
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${DUE_TONES[dueInfo.tone]}`}
-                    >
-                      {dueInfo.text}
-                    </span>
-                  )}
-                </div>
-                {task.notes && (
-                  <p className="text-muted mt-1 line-clamp-2 text-xs">{task.notes}</p>
-                )}
-              </div>
-              <button
-                type="button"
-                title={t('tasks.deleteTask')}
-                aria-label={t('tasks.deleteNamed', { title: task.title })}
-                disabled={busy}
-                onClick={() => setPendingDelete(task)}
-                className="text-muted hover:text-tone-rose-fg mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg disabled:opacity-50"
-              >
-                <TrashIcon className="size-3.5" />
-              </button>
-            </li>
-          );
-        })}
+        {preview.map(taskRow)}
       </Card>
+
+      <Modal
+        open={listOpen}
+        size="lg"
+        title={t('widget.tasks.title')}
+        description={t('widget.tasks.desc')}
+        onClose={() => setListOpen(false)}
+      >
+        <ul className="scroll-area max-h-[min(70vh,36rem)] space-y-4 overflow-y-auto">
+          {visible.map(taskRow)}
+        </ul>
+      </Modal>
 
       <Modal
         open={open}
@@ -273,11 +322,13 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
               id={dueFieldId}
               className={`${fieldClass} text-muted`}
               type="date"
+              min={localDateKey(timeZone)}
               value={due}
               onChange={(event) => {
                 const next = event.target.value;
                 setDue(next);
                 if (!next) setDueTime('');
+                else if (dueTime && isClockBeforeNow(next, dueTime, timeZone)) setDueTime('');
               }}
               aria-invalid={showIssue('due') ? true : undefined}
               disabled={creating}
@@ -297,6 +348,7 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
                 emptyLabel={t('time.none')}
                 value={dueTime}
                 onChange={setDueTime}
+                minTime={due === localDateKey(timeZone) ? clockFloor(timeZone) : null}
                 invalid={Boolean(showIssue('dueTime'))}
                 disabled={creating}
               />
@@ -324,6 +376,11 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
             savedPlaces={places}
             disabled={creating}
           />
+          {showIssue('location') && (
+            <p role="alert" className="text-tone-rose-fg -mt-2 text-xs">
+              {eventIssueText('location', issues.location)}
+            </p>
+          )}
           {actionError === 'scope' && (
             <p id={errorId} role="alert" className="text-tone-rose-fg text-sm">
               {t('tasks.needScopeCreate')}{' '}
@@ -338,6 +395,11 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
               <a href={LOGIN_URL} className="font-medium underline">
                 {t('signIn')}
               </a>
+            </p>
+          )}
+          {actionError === 'invalid' && (
+            <p id={errorId} role="alert" className="text-tone-rose-fg text-sm">
+              {t('form.checkFields')}
             </p>
           )}
           {actionError === 'unavailable' && (
@@ -405,3 +467,5 @@ export default function TasksCard({ tasks = [], timeZone, loading, error, onChan
     </>
   );
 }
+
+export default memo(TasksCard);

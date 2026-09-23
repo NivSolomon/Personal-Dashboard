@@ -69,6 +69,7 @@ const userSchema = new Schema(
       weather: {
         lat: { type: Number, default: null },
         lon: { type: Number, default: null },
+        label: { type: String, default: '' },
       },
       places: {
         home: { type: String, default: '' },
@@ -78,6 +79,7 @@ const userSchema = new Schema(
       calorieGoal: { type: Number, default: () => config.defaults.calorieGoal, min: 0 },
       // Saved stocks/funds plus optional price lines. Shape is normalised in lib/watchlist.js.
       watchlist: { type: Schema.Types.Mixed, default: () => ({ items: [] }) },
+      fx: { type: Schema.Types.Mixed, default: () => ({ base: 'ILS', quotes: ['USD'] }) },
       // Order and visibility of dashboard tiles. An empty list means "use catalog defaults".
       layout: {
         widgets: [
@@ -89,16 +91,19 @@ const userSchema = new Schema(
       },
     },
 
-    // Today's food log; rotated to the user's local date on the next write.
+    // Daily food log. `entries` is today; `days` keeps recent dates for the week chart.
     nutritionLog: {
       date: { type: String, default: '' },
       entries: { type: [Schema.Types.Mixed], default: [] },
+      days: { type: Schema.Types.Mixed, default: () => ({}) },
     },
 
     lastSeenAt: { type: Date, default: null },
   },
   { timestamps: true, minimize: false },
 );
+
+userSchema.index({ active: 1, 'google.connectedAt': 1 });
 
 const summarySchema = new Schema(
   {
@@ -107,12 +112,16 @@ const summarySchema = new Schema(
     date: { type: String, required: true },
     text: { type: String, default: '' },
     dailyTip: { type: String, default: '' },
+    // The one language this briefing was written in. Not a bilingual store.
+    language: { type: String, default: '' },
     model: { type: String, default: null },
     promptHash: { type: String, default: null },
     generatedAt: { type: Date, default: null },
     checkedAt: { type: Date, default: null },
     reused: { type: Boolean, default: false },
     stats: { type: Schema.Types.Mixed, default: {} },
+    sentences: { type: [Schema.Types.Mixed], default: [] },
+    tipSources: { type: [String], default: [] },
     // Not named `errors`: that is a reserved Mongoose document path. Write-only
     // diagnostics recording which sources failed when this briefing was built.
     sourceErrors: { type: [Schema.Types.Mixed], default: [] },
@@ -122,6 +131,21 @@ const summarySchema = new Schema(
 
 export const User = mongoose.models.User || mongoose.model('User', userSchema);
 export const Summary = mongoose.models.Summary || mongoose.model('Summary', summarySchema);
+
+const briefingLogSchema = new Schema(
+  {
+    userId: { type: String, required: true, index: true },
+    date: { type: String, required: true },
+    language: { type: String, default: '' },
+    text: { type: String, default: '' },
+    dailyTip: { type: String, default: '' },
+  },
+  { timestamps: true },
+);
+briefingLogSchema.index({ userId: 1, date: 1 }, { unique: true });
+
+export const BriefingLog =
+  mongoose.models.BriefingLog || mongoose.model('BriefingLog', briefingLogSchema);
 
 let connecting = null;
 
@@ -133,6 +157,8 @@ export function connectDb() {
       .connect(config.mongoUri, {
         dbName: config.mongoDbName,
         serverSelectionTimeoutMS: 10000,
+        maxPoolSize: 10,
+        minPoolSize: 1,
       })
       .then((m) => m.connection);
   }

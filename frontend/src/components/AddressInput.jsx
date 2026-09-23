@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { BriefcaseIcon, HomeIcon } from './icons.jsx';
-import { api } from '../lib/api.js';
+import { api, isAbortError } from '../lib/api.js';
 import { useT } from '../lib/i18n.jsx';
 
 const DEFAULT_INPUT =
@@ -62,14 +62,20 @@ export default function AddressInput({
       return undefined;
     }
 
+    const controller = new AbortController();
     const handle = setTimeout(() => {
       api
-        .suggestPlaces(q, bias)
+        .suggestPlaces(q, bias, { signal: controller.signal })
         .then((body) => setRemote(body.places || []))
-        .catch(() => setRemote([]));
+        .catch((error) => {
+          if (!isAbortError(error)) setRemote([]);
+        });
     }, 280);
 
-    return () => clearTimeout(handle);
+    return () => {
+      clearTimeout(handle);
+      controller.abort();
+    };
   }, [value, bias?.lat, bias?.lon]);
 
   useEffect(() => {

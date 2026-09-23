@@ -22,7 +22,9 @@ import {
 
 export async function authRoutes(app) {
   // Step 1: send the browser to Google's consent screen.
-  app.get('/auth/google', async (request, reply) => {
+  app.get('/auth/google', {
+    config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const state = randomUUID();
     setOAuthState(reply, state);
     return reply.redirect(getAuthUrl(state));

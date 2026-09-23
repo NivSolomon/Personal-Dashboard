@@ -18,6 +18,9 @@ export function createTtlCache({ ttlMs, maxEntries = 200 } = {}) {
       entries.delete(key);
       return undefined;
     }
+    // Re-insert so a hit counts as recently used (LRU), not just oldest-first FIFO.
+    entries.delete(key);
+    entries.set(key, entry);
     return entry.value;
   }
 
@@ -36,27 +39,36 @@ export function createTtlCache({ ttlMs, maxEntries = 200 } = {}) {
 
   /**
    * Returns the cached value for `key`, otherwise runs `factory` and caches it.
-   * `force` skips the read but still joins an in-flight fetch, and `shouldCache`
-   * lets the caller refuse to cache a degraded result.
+   * `force` skips the read but still joins an in-flight fetch, `isFresh` rejects a
+   * hit that is still within TTL but no longer valid (for example a language
+   * change), and `shouldCache` lets the caller refuse to cache a degraded result.
    */
-  async function wrap(key, factory, { force = false, shouldCache = () => true } = {}) {
-    if (!force) {
-      const hit = read(key);
-      if (hit !== undefined) return { value: hit, cached: true };
-    }
+  async function wrap(key, factory, { force = false, shouldCache = () => true, isFresh } = {}) {
+    const usable = (value) => force || !isFresh || isFresh(value);
 
-    const pending = inflight.get(key);
-    if (pending) return { value: await pending, cached: true };
+    for (;;) {
+      if (!force) {
+        const hit = read(key);
+        if (hit !== undefined && usable(hit)) return { value: hit, cached: true };
+      }
 
-    const promise = Promise.resolve().then(factory);
-    inflight.set(key, promise);
-    try {
-      const value = await promise;
-      if (shouldCache(value)) write(key, value);
-      else invalidate(key);
-      return { value, cached: false };
-    } finally {
-      inflight.delete(key);
+      const pending = inflight.get(key);
+      if (pending) {
+        const value = await pending;
+        if (usable(value)) return { value, cached: true };
+        continue;
+      }
+
+      const promise = Promise.resolve().then(factory);
+      inflight.set(key, promise);
+      try {
+        const value = await promise;
+        if (shouldCache(value)) write(key, value);
+        else invalidate(key);
+        return { value, cached: false };
+      } finally {
+        inflight.delete(key);
+      }
     }
   }
 

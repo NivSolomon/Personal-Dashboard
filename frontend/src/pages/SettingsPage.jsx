@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api, LOGIN_URL, NOTION_CONNECT_URL, STRAVA_CONNECT_URL } from '../lib/api.js';
 import { loginErrorText, eventIssueText } from '../lib/errors.js';
-import { TrashIcon } from '../components/icons.jsx';
+import {
+  ChartIcon,
+  ChevronDownIcon,
+  GearIcon,
+  LayoutIcon,
+  ShieldIcon,
+  TrashIcon,
+} from '../components/icons.jsx';
 import BrandLogo from '../components/BrandLogo.jsx';
 import { SoundToggle } from '../components/SoundFx.jsx';
 import LayoutPicker from '../components/LayoutPicker.jsx';
 import WatchlistEditor from '../components/WatchlistEditor.jsx';
 import AddressInput from '../components/AddressInput.jsx';
-import { moveWidget, reorderWidgets, withWidgetEnabled } from '../lib/widgets.js';
+import { moveWidget, reorderWidgets, visibleWidgets, withWidgetEnabled } from '../lib/widgets.js';
 import { GOAL_MAX_KCAL, GOAL_MAX_KM, hasIssues, settingsFormIssues } from '../lib/validate.js';
 import { LanguageSwitch, useT } from '../lib/i18n.jsx';
 import LanguageMenu from '../components/LanguageMenu.jsx';
@@ -41,19 +48,89 @@ function Field({ label, children }) {
   );
 }
 
+const PANEL_TONES = {
+  indigo: 'bg-tone-indigo text-tone-indigo-fg',
+  green: 'bg-tone-green text-tone-green-fg',
+  amber: 'bg-tone-amber text-tone-amber-fg',
+  blue: 'bg-tone-blue text-tone-blue-fg',
+  rose: 'bg-tone-rose text-tone-rose-fg',
+};
+
+function SettingsPanel({
+  id,
+  title,
+  hint,
+  summary,
+  icon,
+  tone = 'indigo',
+  open,
+  onToggle,
+  children,
+  danger = false,
+}) {
+  const bodyId = `${id}-body`;
+  const toneClasses = PANEL_TONES[tone] ?? PANEL_TONES.indigo;
+  return (
+    <section
+      id={id}
+      className={`overflow-hidden rounded-2xl border ${
+        danger ? 'border-border' : 'border-border bg-surface shadow-sm'
+      }`}
+    >
+      <h2>
+        <button
+          type="button"
+          className="hover:bg-surface-hover/60 flex w-full items-center justify-between gap-3 px-5 py-4 text-start sm:px-6"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={onToggle}
+        >
+          <span className="flex min-w-0 items-start gap-3">
+            {icon ? (
+              <span className={`mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg ${toneClasses}`}>
+                {icon}
+              </span>
+            ) : null}
+            <span className="min-w-0">
+              <span className="text-foreground block text-lg font-semibold">{title}</span>
+              {!open && (summary || hint) ? (
+                <span className="text-muted mt-0.5 block text-sm font-normal">{summary || hint}</span>
+              ) : null}
+            </span>
+          </span>
+          <ChevronDownIcon
+            className={`text-muted size-5 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </h2>
+      {open ? (
+        <div id={bodyId} className="border-border-subtle border-t px-5 py-5 sm:px-6">
+          {hint ? <p className="text-muted mb-4 text-sm">{hint}</p> : null}
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 const inputClass =
   'border-border bg-surface text-foreground w-full rounded-lg border px-3 py-2 text-sm';
 
 export default function SettingsPage({ account, onAccountChange, onSignedOut, onLanguageChange }) {
   const { t } = useT();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const oauthError = searchParams.get('error');
 
+  const [openSection, setOpenSection] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.hash === '#layout') return 'layout';
+    return oauthError ? 'accounts' : null;
+  });
   const [saving, setSaving] = useState(false);
+  const [prefsAttempted, setPrefsAttempted] = useState(false);
   const [busy, setBusy] = useState(null);
   const [notice, setNotice] = useState(null);
   const [sources, setSources] = useState([]);
-  const [weatherQuery, setWeatherQuery] = useState('');
   const [form, setForm] = useState(() => ({
     timeZone: account.settings.timeZone,
     language: account.settings.language,
@@ -62,12 +139,29 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
     calorieGoal: account.settings.calorieGoal || 2000,
     lat: account.settings.weather?.lat ?? '',
     lon: account.settings.weather?.lon ?? '',
+    weatherPlace: account.settings.weather?.label || '',
     home: account.settings.places?.home || '',
     work: account.settings.places?.work || '',
   }));
 
   const offered = account.offered || {};
   const connected = account.connected || {};
+  const watchItems = account.settings?.watchlist?.items || [];
+  const connectedNames = [
+    connected.google && 'Google',
+    offered.notion && connected.notion && 'Notion',
+    offered.strava && connected.strava && 'Strava',
+  ].filter(Boolean);
+  const prefIssues = settingsFormIssues(form, { weatherOffered: Boolean(offered.weather) });
+  const showPrefIssue = (field) => prefsAttempted && prefIssues[field];
+
+  useEffect(() => {
+    if (location.hash !== '#layout') return;
+    setOpenSection('layout');
+    document.getElementById('layout')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [location.hash]);
+
+  const toggleSection = (id) => setOpenSection((current) => (current === id ? null : id));
 
   useEffect(() => {
     if (!connected.notion) {
@@ -129,6 +223,7 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
 
   const savePreferences = async (event) => {
     event.preventDefault();
+    setPrefsAttempted(true);
     const issues = settingsFormIssues(form, { weatherOffered: Boolean(offered.weather) });
     if (hasIssues(issues)) {
       const first = Object.entries(issues)[0];
@@ -147,6 +242,7 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
         weather: {
           lat: form.lat === '' ? null : Number(form.lat),
           lon: form.lon === '' ? null : Number(form.lon),
+          label: form.weatherPlace.trim(),
         },
         places: {
           home: form.home.trim(),
@@ -240,12 +336,20 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
         <p className="bg-tone-neutral text-tone-neutral-fg rounded-lg px-3 py-2 text-sm">{notice}</p>
       )}
 
-      <section className="border-border bg-surface rounded-2xl border p-5 shadow-sm sm:p-6">
-        <h2 className="text-foreground text-lg font-semibold">{t('settings.accounts')}</h2>
-        <p className="text-muted mt-1 text-sm">{t('settings.accountsHint')}</p>
+      <div className="space-y-3">
 
-        <ul className="mt-5 space-y-4">
-          <li className="border-border-subtle flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+      <SettingsPanel
+        id="accounts"
+        title={t('settings.accounts')}
+        hint={t('settings.accountsHint')}
+        summary={connectedNames.join(' · ') || t('settings.accountsNone')}
+        icon={<ShieldIcon className="size-4.5" />}
+        tone="indigo"
+        open={openSection === 'accounts'}
+        onToggle={() => toggleSection('accounts')}
+      >
+        <ul className="space-y-4">
+          <li className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-foreground font-medium">Google</p>
               <p className="text-muted text-sm">{account.user.email}</p>
@@ -366,28 +470,44 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
             </li>
           )}
         </ul>
-      </section>
+      </SettingsPanel>
 
-      <section id="layout" className="border-border bg-surface rounded-2xl border p-5 shadow-sm sm:p-6">
-        <h2 className="text-foreground text-lg font-semibold">{t('settings.layout')}</h2>
-        <p className="text-muted mt-1 text-sm">{t('settings.layoutHint')}</p>
-        <div className="mt-4">
-          <LayoutPicker
-            layout={account.settings?.layout}
-            session={account}
-            disabled={saving}
-            onChange={patchWidget}
-          />
-        </div>
-      </section>
+      <SettingsPanel
+        id="layout"
+        title={t('settings.layout')}
+        icon={<LayoutIcon className="size-4.5" />}
+        tone="blue"
+        hint={t('settings.layoutHint')}
+        summary={t('settings.layoutSummary', { n: visibleWidgets(account).length })}
+        open={openSection === 'layout'}
+        onToggle={() => toggleSection('layout')}
+      >
+        <LayoutPicker
+          layout={account.settings?.layout}
+          session={account}
+          disabled={saving}
+          onChange={patchWidget}
+        />
+      </SettingsPanel>
 
-      <section className="border-border bg-surface rounded-2xl border p-5 shadow-sm sm:p-6">
-        <h2 className="text-foreground text-lg font-semibold">{t('settings.watch')}</h2>
-        <p className="text-muted mt-1 text-sm">{t('settings.watchHint')}</p>
+      <SettingsPanel
+        id="watch"
+        title={t('settings.watch')}
+        hint={t('settings.watchHint')}
+        icon={<ChartIcon className="size-4.5" />}
+        tone="amber"
+        summary={
+          watchItems.length
+            ? t('settings.watchSummary', { n: watchItems.length })
+            : t('settings.watchEmpty')
+        }
+        open={openSection === 'watch'}
+        onToggle={() => toggleSection('watch')}
+      >
 
-        {Boolean(account.settings?.watchlist?.items?.length) && (
-          <ul className="mt-4 space-y-2">
-            {(account.settings.watchlist.items || []).map((item) => (
+        {Boolean(watchItems.length) && (
+          <ul className="space-y-2">
+            {watchItems.map((item) => (
               <li
                 key={item.id}
                 className="border-border-subtle flex flex-wrap items-center justify-between gap-2 border-t pt-3"
@@ -427,7 +547,7 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
           </ul>
         )}
 
-        <div className="mt-4">
+        <div className={watchItems.length ? 'mt-4' : ''}>
           <WatchlistEditor
             onAdded={(updated) => {
               onAccountChange(updated);
@@ -436,11 +556,19 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
             busy={Boolean(busy)}
           />
         </div>
-      </section>
+      </SettingsPanel>
 
-      <section className="border-border bg-surface rounded-2xl border p-5 shadow-sm sm:p-6">
-        <h2 className="text-foreground text-lg font-semibold">{t('settings.prefs')}</h2>
-        <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={savePreferences}>
+      <SettingsPanel
+        id="prefs"
+        title={t('settings.prefs')}
+        hint={t('settings.prefsHint')}
+        icon={<GearIcon className="size-4.5" />}
+        tone="green"
+        summary={`${form.language === 'English' ? t('languageEnglish') : t('languageHebrew')} · ${form.timeZone}`}
+        open={openSection === 'prefs'}
+        onToggle={() => toggleSection('prefs')}
+      >
+        <form className="grid gap-4 sm:grid-cols-2" onSubmit={savePreferences}>
           <Field label={t('settings.timeZone')}>
             <select
               className={inputClass}
@@ -479,9 +607,16 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
               min="0"
               max={GOAL_MAX_KM}
               step="0.1"
+              required
               value={form.weeklyGoalKm}
               onChange={(event) => patchForm('weeklyGoalKm', event.target.value)}
+              aria-invalid={showPrefIssue('weeklyGoalKm') ? true : undefined}
             />
+            {showPrefIssue('weeklyGoalKm') && (
+              <p role="alert" className="text-tone-rose-fg mt-1 text-xs">
+                {eventIssueText('weeklyGoalKm', prefIssues.weeklyGoalKm)}
+              </p>
+            )}
           </Field>
           <Field label={t('settings.calorieGoal')}>
             <input
@@ -490,9 +625,16 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
               min="0"
               max={GOAL_MAX_KCAL}
               step="50"
+              required
               value={form.calorieGoal}
               onChange={(event) => patchForm('calorieGoal', event.target.value)}
+              aria-invalid={showPrefIssue('calorieGoal') ? true : undefined}
             />
+            {showPrefIssue('calorieGoal') && (
+              <p role="alert" className="text-tone-rose-fg mt-1 text-xs">
+                {eventIssueText('calorieGoal', prefIssues.calorieGoal)}
+              </p>
+            )}
           </Field>
           <div className="sm:col-span-1">
             <AddressInput
@@ -503,6 +645,11 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
               placeholder={t('places.street')}
               inputClassName={inputClass}
             />
+            {showPrefIssue('home') && (
+              <p role="alert" className="text-tone-rose-fg mt-1 text-xs">
+                {eventIssueText('home', prefIssues.home)}
+              </p>
+            )}
           </div>
           <div className="sm:col-span-1">
             <AddressInput
@@ -513,44 +660,52 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
               placeholder={t('places.street')}
               inputClassName={inputClass}
             />
+            {showPrefIssue('work') && (
+              <p role="alert" className="text-tone-rose-fg mt-1 text-xs">
+                {eventIssueText('work', prefIssues.work)}
+              </p>
+            )}
           </div>
           {offered.weather && (
-            <>
-              <div className="sm:col-span-2">
-                <AddressInput
-                  label={t('settings.weatherPlace')}
-                  value={weatherQuery}
-                  onChange={setWeatherQuery}
-                  onSelect={(place) => {
-                    if (place.lat != null) patchForm('lat', String(Number(place.lat).toFixed(4)));
-                    if (place.lon != null) patchForm('lon', String(Number(place.lon).toFixed(4)));
-                  }}
-                  placeholder={t('settings.weatherSearch')}
-                  inputClassName={inputClass}
-                  savedPlaces={account.settings?.places}
-                />
-              </div>
-              <Field label={t('settings.lat')}>
-                <input
-                  className={inputClass}
-                  type="number"
-                  step="0.0001"
-                  placeholder="32.0853"
-                  value={form.lat}
-                  onChange={(event) => patchForm('lat', event.target.value)}
-                />
-              </Field>
-              <Field label={t('settings.lon')}>
-                <input
-                  className={inputClass}
-                  type="number"
-                  step="0.0001"
-                  placeholder="34.7818"
-                  value={form.lon}
-                  onChange={(event) => patchForm('lon', event.target.value)}
-                />
-              </Field>
-            </>
+            <div className="sm:col-span-2">
+              <AddressInput
+                label={t('settings.weatherPlace')}
+                value={form.weatherPlace}
+                onChange={(weatherPlace) => patchForm('weatherPlace', weatherPlace)}
+                onSelect={async (place) => {
+                  let lat = place.lat;
+                  let lon = place.lon;
+                  if ((lat == null || lon == null) && place.label) {
+                    try {
+                      const body = await api.suggestPlaces(place.label);
+                      const match = (body.places || []).find(
+                        (row) => row.lat != null && row.lon != null,
+                      );
+                      if (match) {
+                        lat = match.lat;
+                        lon = match.lon;
+                      }
+                    } catch {
+                      /* keep the previous saved coordinates */
+                    }
+                  }
+                  setForm((prev) => ({
+                    ...prev,
+                    weatherPlace: place.label || prev.weatherPlace,
+                    lat: lat != null ? String(Number(lat).toFixed(4)) : prev.lat,
+                    lon: lon != null ? String(Number(lon).toFixed(4)) : prev.lon,
+                  }));
+                }}
+                placeholder={t('settings.weatherSearch')}
+                inputClassName={inputClass}
+                savedPlaces={account.settings?.places}
+              />
+              {showPrefIssue('coords') && (
+                <p role="alert" className="text-tone-rose-fg mt-1 text-xs">
+                  {eventIssueText('coords', prefIssues.coords)}
+                </p>
+              )}
+            </div>
           )}
           <div className="sm:col-span-2">
             <button
@@ -562,20 +717,28 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
             </button>
           </div>
         </form>
-      </section>
+      </SettingsPanel>
 
-      <section className="border-border rounded-2xl border p-5 sm:p-6">
-        <h2 className="text-foreground text-lg font-semibold">{t('settings.delete')}</h2>
-        <p className="text-muted mt-1 text-sm">{t('settings.deleteHint')}</p>
+      <SettingsPanel
+        id="delete"
+        title={t('settings.delete')}
+        hint={t('settings.deleteHint')}
+        icon={<TrashIcon className="size-4.5" />}
+        tone="rose"
+        open={openSection === 'delete'}
+        onToggle={() => toggleSection('delete')}
+        danger
+      >
         <button
           type="button"
           disabled={busy === 'account'}
           onClick={deleteAccount}
-          className="text-tone-rose-fg mt-3 text-sm font-medium hover:underline disabled:opacity-50"
+          className="text-tone-rose-fg text-sm font-medium hover:underline disabled:opacity-50"
         >
           {t('settings.deleteAction')}
         </button>
-      </section>
+      </SettingsPanel>
+      </div>
     </div>
   );
 }

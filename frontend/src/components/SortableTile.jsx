@@ -1,10 +1,14 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripIcon } from './icons.jsx';
+import { WidgetIdContext } from './Card.jsx';
+import { isWidgetCited, useHighlight } from '../lib/highlight.jsx';
 import { useT, widgetTitle } from '../lib/i18n.jsx';
 
 export default function SortableTile({ id, className = '', children, disabled = false }) {
   const { t, language } = useT();
+  const { active } = useHighlight();
+  const cited = isWidgetCited(active, id);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled,
@@ -14,11 +18,14 @@ export default function SortableTile({ id, className = '', children, disabled = 
   return (
     <div
       ref={setNodeRef}
+      data-widget-id={id}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
       }}
-      className={`relative ${className} ${isDragging ? 'z-20 opacity-80' : ''}`}
+      className={`relative ${className} ${isDragging ? 'z-20 opacity-80' : ''} ${
+        cited ? 'ring-2 ring-indigo-400/80 ring-offset-2 ring-offset-background rounded-2xl' : ''
+      }`}
     >
       {!disabled && (
         <button
@@ -32,7 +39,7 @@ export default function SortableTile({ id, className = '', children, disabled = 
           <GripIcon className="size-4" />
         </button>
       )}
-      {children}
+      <WidgetIdContext.Provider value={id}>{children}</WidgetIdContext.Provider>
     </div>
   );
 }

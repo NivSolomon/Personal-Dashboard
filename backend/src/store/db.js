@@ -7,7 +7,7 @@
  * a profile never hold a live credential.
  */
 import { decryptJson, decryptSecret, encryptJson, encryptSecret } from '../lib/crypto.js';
-import { connectDb, Summary, User } from './models.js';
+import { connectDb, BriefingLog, Summary, User } from './models.js';
 
 export { connectDb, disconnectDb } from './models.js';
 
@@ -208,7 +208,11 @@ export async function touchLastSeen(userId) {
 
 export async function deleteUser(userId) {
   await connectDb();
-  await Promise.all([User.deleteOne({ _id: userId }), Summary.deleteOne({ userId })]);
+  await Promise.all([
+    User.deleteOne({ _id: userId }),
+    Summary.deleteOne({ userId }),
+    BriefingLog.deleteMany({ userId }),
+  ]);
 }
 
 export async function getSummary(userId) {
@@ -225,4 +229,22 @@ export async function saveSummary(userId, summary) {
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
   return doc.toObject();
+}
+
+export async function saveBriefingLog(userId, { date, language, text, dailyTip }) {
+  await connectDb();
+  if (!date || !text) return null;
+  await BriefingLog.findOneAndUpdate(
+    { userId, date },
+    { $set: { userId, date, language: language || '', text, dailyTip: dailyTip || '' } },
+    { upsert: true, setDefaultsOnInsert: true },
+  );
+}
+
+export async function listBriefingLogs(userId, { sinceDate, limit = 8 } = {}) {
+  await connectDb();
+  const filter = { userId };
+  if (sinceDate) filter.date = { $gte: sinceDate };
+  const docs = await BriefingLog.find(filter).sort({ date: -1 }).limit(limit);
+  return docs.map((doc) => doc.toObject());
 }

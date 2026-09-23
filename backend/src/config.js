@@ -17,6 +17,12 @@ export const config = {
   host: process.env.HOST || '0.0.0.0',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   sessionSecret: process.env.SESSION_SECRET || '',
+  // Set TRUST_PROXY=true behind Nginx/Caddy/Render so req.ip and HTTPS scheme are real.
+  trustProxy: /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY || '')),
+  cookieSecure:
+    /^(1|true|yes)$/i.test(String(process.env.COOKIE_SECURE || '')) ||
+    process.env.NODE_ENV === 'production' ||
+    String(process.env.FRONTEND_URL || '').startsWith('https:'),
   // 32 bytes of hex; guards provider refresh tokens at rest.
   encryptionKey: process.env.ENCRYPTION_KEY || '',
   mongoUri: process.env.MONGODB_URI || '',

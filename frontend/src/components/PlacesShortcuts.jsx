@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BriefcaseIcon, HomeIcon } from './icons.jsx';
-import { api } from '../lib/api.js';
+import { api, isAbortError } from '../lib/api.js';
 import { driveDurationLabel, timeLabel } from '../lib/format.js';
 import { wazeNavigateUrl } from '../lib/places.js';
 import { useT } from '../lib/i18n.jsx';
@@ -33,7 +33,7 @@ function etaText(eta, timeZone, nearbyLabel) {
 function PlaceChip({ href, title, icon, label, eta, loading, timeZone, nearbyLabel }) {
   const line = etaText(eta, timeZone, nearbyLabel);
   return (
-    <a href={href} target="_blank" rel="noreferrer" title={title} className={chipClass}>
+    <a href={href} target="_blank" rel="noopener noreferrer" title={title} className={chipClass}>
       {icon}
       <span className="flex min-w-0 flex-col items-start leading-tight">
         <span>{label}</span>
@@ -58,9 +58,15 @@ export default function PlacesShortcuts({ places, origin, timeZone }) {
   useEffect(() => {
     if (!home && !work) return undefined;
     let cancelled = false;
+    let controller;
 
     const load = async () => {
+      if (document.hidden) return;
+      controller?.abort();
+      controller = new AbortController();
+      const { signal } = controller;
       const gps = await readGps();
+      if (cancelled || signal.aborted) return;
       const fallbackLat = Number(origin?.lat);
       const fallbackLon = Number(origin?.lon);
       const from =
@@ -73,12 +79,13 @@ export default function PlacesShortcuts({ places, origin, timeZone }) {
         return;
       }
       try {
-        const next = await api.placeEta(from);
-        if (!cancelled) setEtas({ home: next?.home || null, work: next?.work || null });
-      } catch {
-        if (!cancelled) setEtas({ home: null, work: null });
+        const next = await api.placeEta(from, { signal });
+        if (!cancelled && !signal.aborted) setEtas({ home: next?.home || null, work: next?.work || null });
+      } catch (error) {
+        if (cancelled || isAbortError(error)) return;
+        setEtas({ home: null, work: null });
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && !signal.aborted) setLoading(false);
       }
     };
 
@@ -86,6 +93,7 @@ export default function PlacesShortcuts({ places, origin, timeZone }) {
     const timer = window.setInterval(load, 120_000);
     return () => {
       cancelled = true;
+      controller?.abort();
       window.clearInterval(timer);
     };
   }, [home, work, origin?.lat, origin?.lon]);

@@ -47,6 +47,44 @@ export async function fetchTodayEvents(auth, { timeZone = config.timeZone, now =
     .map(shapeEvent);
 }
 
+/** Events in `[start, end)` on the primary calendar, used by week Q&A. */
+export async function fetchEventsInRange(
+  auth,
+  { timeZone = config.timeZone, start, end, maxResults = 80 } = {},
+) {
+  const calendar = google.calendar({ version: 'v3', auth });
+  const { data } = await calendar.events.list({
+    calendarId: 'primary',
+    timeMin: start.toISOString(),
+    timeMax: end.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+    maxResults,
+    timeZone,
+  });
+
+  return (data.items || [])
+    .filter((event) => event.status !== 'cancelled')
+    .map(shapeEvent);
+}
+
+/**
+ * Moves a timed event. Title and location stay as they are — the timeline
+ * what-if only changes wall-clock bounds.
+ */
+export async function updateCalendarEvent(auth, eventId, { date, startTime, endTime, timeZone }) {
+  const calendar = google.calendar({ version: 'v3', auth });
+  const { data } = await calendar.events.patch({
+    calendarId: 'primary',
+    eventId,
+    requestBody: {
+      start: { dateTime: `${date}T${startTime}:00`, timeZone },
+      end: { dateTime: `${date}T${endTime}:00`, timeZone },
+    },
+  });
+  return shapeEvent(data);
+}
+
 /**
  * Creates an event on the primary calendar. Timed events carry the user's
  * timezone so Google stores the wall-clock time they typed.

@@ -6,6 +6,8 @@ import BrandLogo from './BrandLogo.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import { SoundToggle } from './SoundFx.jsx';
 import AddressInput from './AddressInput.jsx';
+import { eventIssueText } from '../lib/errors.js';
+import { LOCATION_MAX } from '../lib/validate.js';
 import { useT } from '../lib/i18n.jsx';
 import LanguageMenu from './LanguageMenu.jsx';
 
@@ -27,12 +29,17 @@ export default function PlacesSetup({
   const [work, setWork] = useState(suggested.work || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [attempted, setAttempted] = useState(false);
+
+  const homeIssue = !home.trim() ? 'required' : home.trim().length > LOCATION_MAX ? 'too_long' : null;
+  const workIssue = !work.trim() ? 'required' : work.trim().length > LOCATION_MAX ? 'too_long' : null;
 
   const submit = async (event) => {
     event.preventDefault();
+    setAttempted(true);
     const nextHome = home.trim();
     const nextWork = work.trim();
-    if (!nextHome || !nextWork) {
+    if (!nextHome || !nextWork || nextHome.length > LOCATION_MAX || nextWork.length > LOCATION_MAX) {
       setError(t('places.missing'));
       playUi('error');
       return;
@@ -101,6 +108,11 @@ export default function PlacesSetup({
               placeholder={t('places.street')}
               inputClassName={inputClass}
             />
+            {attempted && homeIssue && (
+              <p role="alert" className="text-tone-rose-fg -mt-2 text-xs">
+                {eventIssueText('home', homeIssue)}
+              </p>
+            )}
 
             <AddressInput
               label={
@@ -115,6 +127,11 @@ export default function PlacesSetup({
               placeholder={t('places.street')}
               inputClassName={inputClass}
             />
+            {attempted && workIssue && (
+              <p role="alert" className="text-tone-rose-fg -mt-2 text-xs">
+                {eventIssueText('work', workIssue)}
+              </p>
+            )}
 
             {error && (
               <p className="bg-tone-rose text-tone-rose-fg rounded-lg px-3 py-2 text-sm">{error}</p>

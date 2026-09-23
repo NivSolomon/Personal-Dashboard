@@ -1,15 +1,13 @@
-import OpenAI from 'openai';
 import { config, isOpenAiConfigured } from '../config.js';
+import { getOpenAiClient } from './client.js';
 import { parseJsonObject } from '../lib/json.js';
+import { isPlausibleFoodQuery } from '../lib/foodQuery.js';
 
 const VISION_MODEL = 'gpt-4o-mini';
 const MAX_B64_CHARS = 3_500_000;
 
-let client = null;
-
 function getClient() {
-  if (!client) client = new OpenAI({ apiKey: config.openai.apiKey });
-  return client;
+  return getOpenAiClient();
 }
 
 function roundKcal(value) {
@@ -83,6 +81,7 @@ function textSystemPrompt(language) {
     'Return a JSON object with keys: name, ingredients, estimatedCalories, protein, carbs, fat.',
     'estimatedCalories is a whole number. protein, carbs and fat are grams.',
     'Assume one typical serving unless the text specifies amounts. Be conservative.',
+    'If the text is not food, a drink, or a meal, set estimatedCalories to 0 and leave macros at 0.',
   ].join(' ');
 }
 
@@ -128,18 +127,23 @@ export async function analyzeMealPhoto({ image, language, logger } = {}) {
 }
 
 export async function estimateFromText({ query, language, logger } = {}) {
-  if (!isOpenAiConfigured()) {
-    const error = new Error('openai_unavailable');
-    error.statusCode = 503;
-    error.code = 'openai_unavailable';
-    throw error;
-  }
-
   const text = String(query || '').trim().slice(0, 200);
   if (text.length < 2) {
     const error = new Error('invalid_query');
     error.statusCode = 400;
     error.code = 'invalid_query';
+    throw error;
+  }
+  if (!isPlausibleFoodQuery(text)) {
+    const error = new Error('not_food_query');
+    error.statusCode = 400;
+    error.code = 'not_food_query';
+    throw error;
+  }
+  if (!isOpenAiConfigured()) {
+    const error = new Error('openai_unavailable');
+    error.statusCode = 503;
+    error.code = 'openai_unavailable';
     throw error;
   }
 

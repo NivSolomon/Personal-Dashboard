@@ -1,7 +1,9 @@
 import { config, isNotionConfigured, isStravaConfigured, isWeatherConfigured } from '../config.js';
 import {
   parseEventBody,
+  parseEventMove,
   parseTaskBody,
+  parseWeekQuestion,
   parseCoordinates,
   LANGUAGES,
   GOAL_MAX_KM,
@@ -10,6 +12,8 @@ import {
 import { nutritionRoutes } from './nutrition.js';
 import { readSession } from '../lib/session.js';
 import { normalizeLayout } from '../lib/widgets.js';
+import { FX_CURRENCIES, normalizeFxCode, normalizeFxSettings, parseFxPatch } from '../lib/fx.js';
+import { fetchFxHistory } from '../integrations/fx.js';
 import {
   completeOnboarding,
   getNotionToken,
@@ -29,9 +33,10 @@ import {
 import { MissingAuthError, getAuthedClient, isGoogleScopeError } from '../google/client.js';
 import { collectDashboardData, invalidateDashboardCache } from '../services/dashboard.js';
 import { getOrBuildSummary } from '../services/morningSummary.js';
+import { askWeek } from '../services/weekAsk.js';
 import { describeSelection, listNotionDataSources } from '../integrations/notionOAuth.js';
 import { completeTask, createTask, deleteTask, reopenTask } from '../google/tasks.js';
-import { createCalendarEvent, deleteCalendarEvent } from '../google/calendar.js';
+import { createCalendarEvent, deleteCalendarEvent, updateCalendarEvent } from '../google/calendar.js';
 import { searchQuotes, fetchQuote } from '../integrations/quotes.js';
 import { normalizeCurrency } from '../lib/watchlist.js';
 import { suggestPlaces } from '../integrations/places.js';
@@ -69,6 +74,7 @@ function accountPayload(user) {
     settings: {
       ...user.settings,
       layout: normalizeLayout(user.settings?.layout),
+      fx: normalizeFxSettings(user.settings?.fx),
     },
     offered: offered(),
     connected: user.connected,
@@ -106,12 +112,15 @@ export async function apiRoutes(app) {
     return accountPayload(request.currentUser);
   });
 
-  app.get('/api/dashboard', async (request) =>
-    collectDashboardData(request.currentUser.id, { logger: request.log }),
-  );
+  app.get('/api/dashboard', async (request) => {
+    const fast = request.query?.fast === '1' || request.query?.fast === 'true';
+    return collectDashboardData(request.currentUser.id, { logger: request.log, fast });
+  });
 
   app.post('/api/events', async (request, reply) => {
-    const parsed = parseEventBody(request.body);
+    const parsed = parseEventBody(request.body, {
+      timeZone: request.currentUser.settings.timeZone,
+    });
     if (parsed.error) return reply.code(400).send({ error: parsed.error });
     const { title, date, allDay, startTime, endTime, location, description } = parsed.value;
     const timeZone = request.currentUser.settings.timeZone;
@@ -155,8 +164,38 @@ export async function apiRoutes(app) {
     }
   });
 
+  app.patch('/api/events/:eventId', async (request, reply) => {
+    const eventId = String(request.params.eventId || '');
+    if (!eventId) return reply.code(400).send({ error: 'invalid_event' });
+    const parsed = parseEventMove(request.body, {
+      timeZone: request.currentUser.settings.timeZone,
+    });
+    if (parsed.error) return reply.code(400).send({ error: parsed.error });
+    const { date, startTime, endTime } = parsed.value;
+    const timeZone = request.currentUser.settings.timeZone;
+
+    try {
+      const auth = await getAuthedClient(request.currentUser.id);
+      const event = await updateCalendarEvent(auth, eventId, {
+        date,
+        startTime,
+        endTime,
+        timeZone,
+      });
+      invalidateDashboardCache(request.currentUser.id);
+      return event;
+    } catch (error) {
+      if (isGoogleScopeError(error)) {
+        return reply.code(403).send({ error: 'insufficient_scope' });
+      }
+      throw error;
+    }
+  });
+
   app.post('/api/tasks', async (request, reply) => {
-    const parsed = parseTaskBody(request.body);
+    const parsed = parseTaskBody(request.body, {
+      timeZone: request.currentUser.settings.timeZone,
+    });
     if (parsed.error) return reply.code(400).send({ error: parsed.error });
     const { title, due, time, location } = parsed.value;
 
@@ -237,17 +276,37 @@ export async function apiRoutes(app) {
     getOrBuildSummary(request.currentUser.id, {
       logger: request.log,
       force: request.query.refresh === 'true' || request.query.refresh === '1',
+      language: request.query.language,
     }),
   );
 
-  app.post('/api/summary/refresh', async (request) =>
+  app.post('/api/summary/refresh', {
+    config: { rateLimit: { max: 4, timeWindow: '1 minute' } },
+  }, async (request) =>
     getOrBuildSummary(request.currentUser.id, { logger: request.log, force: true }),
   );
+
+  app.post('/api/week/ask', {
+    config: { rateLimit: { max: 8, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const parsed = parseWeekQuestion(request.body);
+    if (parsed.error) return reply.code(400).send({ error: parsed.error });
+    try {
+      return await askWeek(request.currentUser.id, parsed.value.question, {
+        logger: request.log,
+      });
+    } catch (error) {
+      if (error?.code === 'invalid_question') {
+        return reply.code(400).send({ error: 'invalid_question' });
+      }
+      throw error;
+    }
+  });
 
   app.get('/api/settings', async (request) => accountPayload(request.currentUser));
 
   app.patch('/api/settings', async (request, reply) => {
-    const { timeZone, language, summaryHour, weeklyGoalKm, calorieGoal, weather, places, layout } =
+    const { timeZone, language, summaryHour, weeklyGoalKm, calorieGoal, weather, places, layout, fx } =
       request.body || {};
     const patch = {};
 
@@ -300,10 +359,19 @@ export async function apiRoutes(app) {
     if (layout !== undefined) {
       patch.layout = normalizeLayout(layout);
     }
+    if (fx !== undefined) {
+      const parsed = parseFxPatch({ fx });
+      if (parsed.error) return reply.code(400).send({ error: parsed.error });
+      patch.fx = parsed.value;
+    }
 
     const updated = await updateSettings(request.currentUser.id, patch);
-    // Settings change what the sources return, so the cached bundle is now stale.
-    invalidateDashboardCache(updated.id);
+    const languageOnly = Object.keys(patch).length === 1 && patch.language !== undefined;
+    // Source data (mail, calendar, tasks) does not change with language. Wiping
+    // the Google snapshot would only spend quota; LLM copy is refreshed on reuse.
+    if (!languageOnly) {
+      invalidateDashboardCache(updated.id);
+    }
     return accountPayload(updated);
   });
 
@@ -409,6 +477,25 @@ export async function apiRoutes(app) {
       logger: request.log,
     });
   });
+
+  app.get('/api/fx/currencies', async () => ({ currencies: FX_CURRENCIES }));
+
+  app.get(
+    '/api/fx/history',
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const from = normalizeFxCode(request.query.from);
+      const to = normalizeFxCode(request.query.to);
+      const days = Number(request.query.days);
+      if (!from || !to) return reply.code(400).send({ error: 'invalid_fx_pair' });
+      try {
+        return await fetchFxHistory({ from, to, days });
+      } catch (error) {
+        const status = error.statusCode || 502;
+        return reply.code(status).send({ error: error.code || 'unavailable' });
+      }
+    },
+  );
 
   app.get('/api/quotes/search', async (request, reply) => {
     const q = String(request.query.q || '').trim();

@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { config } from '../config.js';
 import { listActiveUsers } from '../store/db.js';
+import { mapLimit } from '../lib/pool.js';
 import { invalidateDashboardCache } from '../services/dashboard.js';
 import { loadWatchlistForUser, userNeedsWatchlistCheck } from '../services/watchlist.js';
 
@@ -9,11 +10,9 @@ import { loadWatchlistForUser, userNeedsWatchlistCheck } from '../services/watch
  * waiting on the next visit (and in the morning briefing) rather than missed.
  */
 export async function runWatchlistAlerts(logger) {
-  const users = await listActiveUsers();
-  const results = [];
+  const users = (await listActiveUsers()).filter((user) => userNeedsWatchlistCheck(user));
 
-  for (const user of users) {
-    if (!userNeedsWatchlistCheck(user)) continue;
+  return mapLimit(users, 3, async (user) => {
     try {
       const payload = await loadWatchlistForUser(user, { persist: true });
       if (payload.changed) invalidateDashboardCache(user.id);
@@ -23,14 +22,12 @@ export async function runWatchlistAlerts(logger) {
           'watchlist price alert fired',
         );
       }
-      results.push({ userId: user.id, ok: true, fired: payload.fired?.length || 0 });
+      return { userId: user.id, ok: true, fired: payload.fired?.length || 0 };
     } catch (error) {
       logger?.error({ err: error, userId: user.id }, 'watchlist alert check failed');
-      results.push({ userId: user.id, ok: false, error: error.message });
+      return { userId: user.id, ok: false, error: error.message };
     }
-  }
-
-  return results;
+  });
 }
 
 export function startWatchlistAlertJob(logger) {

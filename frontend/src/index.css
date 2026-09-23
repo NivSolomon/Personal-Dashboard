@@ -112,6 +112,14 @@
   scrollbar-color: var(--border) transparent;
 }
 
+@utility timeline-hatch {
+  background-image: repeating-linear-gradient(
+    -52deg,
+    color-mix(in oklab, var(--tone-neutral-fg) 28%, transparent) 0 3px,
+    transparent 3px 8px
+  );
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -142,9 +150,49 @@
   animation: toast-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@keyframes celebrate-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.86) translateY(10px);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.04) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.celebrate-pop {
+  animation: celebrate-pop 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes ask-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+.ask-progress {
+  animation: ask-progress 1.15s ease-in-out infinite;
+}
+
 .modal-dialog {
   margin: auto;
   overflow: visible;
+}
+
+.modal-dialog:not([open]) {
+  display: none;
+}
+
+.modal-dialog[open] {
+  display: block;
 }
 
 .modal-dialog::backdrop {
@@ -153,4 +201,34 @@
 
 .dark .modal-dialog::backdrop {
   background: rgb(2 6 23 / 0.72);
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: 1rem;
+  top: 1rem;
+  z-index: 50;
+  border-radius: 0.5rem;
+  background: var(--surface);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+  box-shadow: 0 10px 15px rgb(15 23 42 / 0.12);
+  transform: translateY(-8rem);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .toast-in,
+  .celebrate-pop,
+  .animate-pulse,
+  .animate-spin,
+  .ask-progress {
+    animation: none !important;
+  }
 }

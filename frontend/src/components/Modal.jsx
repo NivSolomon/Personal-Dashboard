@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { CloseIcon } from './icons.jsx';
 import { useT } from '../lib/i18n.jsx';
 
 /**
- * Native modal dialog: focus is trapped, Escape closes, and the opener is
- * restored when the window shuts.
+ * Native modal on document.body. The dialog stays mounted so opening one
+ * window from another (or from a collapsed card) cannot leave the page inert.
  */
 export default function Modal({ open, title, description, onClose, children, size = 'md' }) {
   const dialogRef = useRef(null);
@@ -21,19 +22,34 @@ export default function Modal({ open, title, description, onClose, children, siz
     const handleClose = () => onCloseRef.current();
     dialog.addEventListener('close', handleClose);
 
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (open && !dialog.open) {
+      try {
+        dialog.showModal();
+      } catch {
+        /* Not connected yet, or another dialog is closing this frame. */
+      }
+    }
 
-    return () => dialog.removeEventListener('close', handleClose);
+    if (!open && dialog.open) {
+      dialog.removeEventListener('close', handleClose);
+      dialog.close();
+      dialog.addEventListener('close', handleClose);
+    }
+
+    return () => {
+      dialog.removeEventListener('close', handleClose);
+    };
   }, [open]);
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
       className={`modal-dialog bg-surface text-foreground w-[calc(100%-1.5rem)] rounded-2xl border-0 p-0 shadow-2xl ${
-        size === 'lg' ? 'max-w-lg' : 'max-w-md'
+        size === 'xl' ? 'max-w-3xl' : size === 'lg' ? 'max-w-lg' : 'max-w-md'
       }`}
       onClick={(event) => {
         if (event.target === event.currentTarget) event.currentTarget.close();
@@ -60,6 +76,7 @@ export default function Modal({ open, title, description, onClose, children, siz
         </button>
       </div>
       <div className="px-5 py-4">{children}</div>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }

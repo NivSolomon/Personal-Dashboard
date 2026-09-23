@@ -8,9 +8,10 @@ export const WIDGET_IDS = [
   'summary',
   'tip',
   'weather',
-  'schedule',
+  'timeline',
   'tasks',
   'emails',
+  'ask',
   'parcels',
   'nutrition',
   'notion',
@@ -23,16 +24,17 @@ export const WIDGET_IDS = [
 export const DEFAULT_WIDGETS = [
   { id: 'summary', enabled: true },
   { id: 'tip', enabled: true },
-  { id: 'weather', enabled: true },
-  { id: 'schedule', enabled: true },
+  { id: 'weather', enabled: false },
+  { id: 'timeline', enabled: true },
   { id: 'tasks', enabled: true },
   { id: 'emails', enabled: true },
-  { id: 'parcels', enabled: true },
-  { id: 'nutrition', enabled: true },
-  { id: 'notion', enabled: true },
-  { id: 'activity', enabled: true },
+  { id: 'ask', enabled: false },
+  { id: 'parcels', enabled: false },
+  { id: 'nutrition', enabled: false },
+  { id: 'notion', enabled: false },
+  { id: 'activity', enabled: false },
   { id: 'usd', enabled: false },
-  { id: 'watchlist', enabled: true },
+  { id: 'watchlist', enabled: false },
 ];
 
 const DEFAULT_BY_ID = new Map(DEFAULT_WIDGETS.map((widget) => [widget.id, widget]));
@@ -45,9 +47,12 @@ export function normalizeLayout(saved) {
   const incoming = Array.isArray(saved?.widgets) ? saved.widgets : [];
   const seen = new Set();
   const widgets = [];
+  const scheduleOn = incoming.some((item) => item?.id === 'schedule' && item.enabled !== false);
 
   for (const item of incoming) {
-    if (!item || !WIDGET_IDS.includes(item.id) || seen.has(item.id)) continue;
+    if (!item || item.id === 'schedule' || !WIDGET_IDS.includes(item.id) || seen.has(item.id)) {
+      continue;
+    }
     seen.add(item.id);
     const fallback = DEFAULT_BY_ID.get(item.id);
     widgets.push({
@@ -59,6 +64,14 @@ export function normalizeLayout(saved) {
   for (const def of DEFAULT_WIDGETS) {
     if (seen.has(def.id)) continue;
     widgets.push({ id: def.id, enabled: def.enabled });
+  }
+
+  if (scheduleOn) {
+    return {
+      widgets: widgets.map((widget) =>
+        widget.id === 'timeline' ? { ...widget, enabled: true } : widget,
+      ),
+    };
   }
 
   return { widgets };

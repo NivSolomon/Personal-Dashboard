@@ -1,3 +1,5 @@
+import { config } from '../config.js';
+
 const SESSION_COOKIE = 'sid';
 const STATE_COOKIE = 'oauth_state';
 
@@ -6,7 +8,7 @@ const baseOptions = {
   sameSite: 'lax',
   path: '/',
   signed: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: config.cookieSecure,
 };
 
 export function setSession(reply, userId) {

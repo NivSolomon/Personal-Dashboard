@@ -95,10 +95,15 @@ export function eventIssueText(field, code) {
   if (field === 'title' && code === 'required') return tr('form.title_required');
   if (field === 'startTime' || field === 'endTime' || field === 'dueTime') {
     if (code === 'invalid') return tr('form.time_invalid');
+    if (code === 'time_in_past') return tr('form.time_in_past');
   }
+  if ((field === 'date' || field === 'due') && code === 'date_in_past') return tr('form.date_in_past');
   if (field === 'weeklyGoalKm') return tr('form.goal_invalid');
   if (field === 'calorieGoal') return tr('form.calorie_invalid');
   if (field === 'coords' && code === 'invalid') return tr('form.coords_invalid');
-  if (field === 'home' || field === 'work') return tr('form.place_required');
+  if (field === 'home' || field === 'work') {
+    if (code === 'too_long') return tr('form.too_long');
+    return tr('form.place_required');
+  }
   return formIssueText(code);
 }

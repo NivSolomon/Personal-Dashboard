@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../lib/api.js';
 import { playUi } from '../lib/sounds.js';
+import { markOnboardComplete, prefersReducedMotion } from '../lib/celebrate.js';
 import { onboardingErrorText } from '../lib/errors.js';
 import { DAILY_ROUTINES, HOBBIES, PRIMARY_FOCUSES } from '../lib/onboarding.js';
 import { LanguageSwitch, displayFirstName, normalizeLanguage, useT } from '../lib/i18n.jsx';
@@ -8,6 +9,7 @@ import LanguageMenu from './LanguageMenu.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import { SoundToggle } from './SoundFx.jsx';
 import BrandLogo from './BrandLogo.jsx';
+import ConfettiBurst from './ConfettiBurst.jsx';
 import {
   BikeIcon,
   BookIcon,
@@ -84,6 +86,7 @@ export default function OnboardingWizard({
   const [dailyRoutine, setDailyRoutine] = useState(account.preferences?.dailyRoutine || null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [finale, setFinale] = useState(false);
 
   const toggleHobby = (id) => {
     setHobbies((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
@@ -97,14 +100,18 @@ export default function OnboardingWizard({
     setSaving(true);
     setError(null);
     try {
-      onSaved(
-        await api.completeOnboarding({
-          primaryFocus,
-          hobbies,
-          dailyRoutine,
-          language: normalizeLanguage(language),
-        }),
-      );
+      const next = await api.completeOnboarding({
+        primaryFocus,
+        hobbies,
+        dailyRoutine,
+        language: normalizeLanguage(language),
+      });
+      markOnboardComplete();
+      setFinale(true);
+      playUi('celebrate');
+      const pause = prefersReducedMotion() ? 500 : 1700;
+      await new Promise((resolve) => window.setTimeout(resolve, pause));
+      onSaved(next);
     } catch (err) {
       setError(err.code || 'unavailable');
       playUi('error');
@@ -263,6 +270,25 @@ export default function OnboardingWizard({
           </div>
         </section>
       </main>
+
+      {finale && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-background/55 px-5 backdrop-blur-sm">
+          <ConfettiBurst active duration={2400} className="pointer-events-none fixed inset-0 z-0" />
+          <div
+            role="status"
+            aria-live="polite"
+            className="celebrate-pop border-border bg-surface relative z-10 max-w-sm rounded-2xl border px-8 py-8 text-center shadow-2xl"
+          >
+            <span className="from-banner-from to-banner-to mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-lg">
+              <SparkleIcon className="size-7" />
+            </span>
+            <p className="text-foreground text-xl font-bold">
+              {firstName ? t('onboard.doneTitleNamed', { name: firstName }) : t('onboard.doneTitle')}
+            </p>
+            <p className="text-muted mt-2 text-sm leading-relaxed">{t('onboard.doneBody')}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

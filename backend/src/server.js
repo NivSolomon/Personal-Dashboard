@@ -2,12 +2,16 @@ import { pathToFileURL } from 'node:url';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
+import compress from '@fastify/compress';
 import { assertRequiredConfig, config, isOpenAiConfigured } from './config.js';
 import { authRoutes } from './routes/auth.js';
 import { apiRoutes } from './routes/api.js';
 import { startMorningSummaryJob } from './jobs/morningSummary.js';
 import { startWatchlistAlertJob } from './jobs/watchlistAlerts.js';
 import { connectDb, disconnectDb } from './store/db.js';
+import { readSession } from './lib/session.js';
 
 async function publicIp() {
   const response = await fetch('https://api.ipify.org', { signal: AbortSignal.timeout(4000) });
@@ -15,21 +19,61 @@ async function publicIp() {
   return response.text();
 }
 
-export async function buildServer() {
-  const app = Fastify({ logger: { level: process.env.LOG_LEVEL || 'info' } });
+function loggerOptions() {
+  return {
+    level: process.env.LOG_LEVEL || 'info',
+    // Drop headers and stacks that often carry Google/OpenAI tokens.
+    serializers: {
+      err(error) {
+        return {
+          type: error?.name,
+          message: error?.message,
+          code: error?.code,
+          status: error?.status || error?.statusCode,
+        };
+      },
+    },
+  };
+}
 
+export async function buildServer() {
+  const app = Fastify({
+    logger: loggerOptions(),
+    trustProxy: config.trustProxy,
+    // 0 keeps the socket open while a handler waits on Google/OpenAI.
+    // requestTimeout only covers receiving the incoming body, not the reply.
+    connectionTimeout: 0,
+    requestTimeout: 60_000,
+    bodyLimit: 1_048_576,
+  });
+
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  });
   await app.register(cors, { origin: config.frontendUrl, credentials: true });
   await app.register(cookie, { secret: config.sessionSecret });
+  await app.register(compress, { global: true, encodings: ['br', 'gzip'] });
+  await app.register(rateLimit, {
+    global: true,
+    max: 120,
+    timeWindow: '1 minute',
+    allowList: (request) => request.url === '/health' || request.url?.startsWith('/health?'),
+    keyGenerator: (request) => readSession(request) || request.ip,
+  });
 
-  app.get('/health', async () => ({
-    ok: true,
-    timeZone: config.timeZone,
-    openai: isOpenAiConfigured() ? config.openai.model : 'not configured',
-    summaryCron: config.summary.cron,
-    watchlistCron: config.watchlist.cron,
-    dashboardCacheSeconds: config.cache.dashboardTtlMs / 1000,
-    minRefreshSeconds: config.summary.minRefreshMs / 1000,
-  }));
+  app.get('/health', async () => {
+    const payload = { ok: true };
+    if (/^(1|true|yes)$/i.test(String(process.env.HEALTH_DETAIL || ''))) {
+      payload.timeZone = config.timeZone;
+      payload.openai = isOpenAiConfigured() ? config.openai.model : 'not configured';
+      payload.summaryCron = config.summary.cron;
+      payload.watchlistCron = config.watchlist.cron;
+      payload.dashboardCacheSeconds = config.cache.dashboardTtlMs / 1000;
+      payload.minRefreshSeconds = config.summary.minRefreshMs / 1000;
+    }
+    return payload;
+  });
 
   await app.register(authRoutes);
   // Scoped so the api-only auth hook and error handler do not affect /auth or /health.
@@ -78,3 +122,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(1);
   });
 }
+

@@ -62,6 +62,23 @@ export function weekRange(timeZone, now = new Date(), startsOn = 0) {
   return { start: dayRange(timeZone, firstDay).start, end: dayRange(timeZone, now).end };
 }
 
+/** `YYYY-MM-DD` plus `days` on the calendar, not elapsed hours (DST-safe). */
+export function shiftDateKey(ymd, days) {
+  const [year, month, day] = String(ymd || '').split('-').map(Number);
+  if (!year || !month || !day) return '';
+  return new Date(Date.UTC(year, month - 1, day + Number(days || 0))).toISOString().slice(0, 10);
+}
+
+/**
+ * Inclusive local days behind `now`, exclusive end after `future` local days
+ * ahead. Used so week Q&A can see both recent history and tomorrow's calendar.
+ */
+export function aroundDaysRange(timeZone, { past = 7, future = 7, now = new Date() } = {}) {
+  const startAt = new Date(now.getTime() - Math.max(0, past - 1) * 24 * 60 * 60 * 1000);
+  const endAt = new Date(now.getTime() + Math.max(0, future) * 24 * 60 * 60 * 1000);
+  return { start: dayRange(timeZone, startAt).start, end: dayRange(timeZone, endAt).end };
+}
+
 /** `YYYY-MM-DD` for the given instant in `timeZone`; used as the summary cache key. */
 export function localDateKey(timeZone, now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {

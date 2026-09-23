@@ -1,0 +1,95 @@
+# Render Blueprint for the API.
+# Morning summaries and watchlist checks run inside this process (node-cron),
+# so the service has to stay awake. The starter plan does; the free plan sleeps
+# and those jobs will not fire. Keep a single instance so the scheduler does
+# not run twice.
+#
+# Create it from the Render Dashboard: New → Blueprint → this repo.
+# Secrets are prompted once (sync: false). They are not stored in git.
+# After the first sync, new secret keys must be added in the Dashboard by hand.
+
+services:
+  - type: web
+    name: mydashi-api
+    runtime: node
+    plan: starter
+    region: frankfurt
+    numInstances: 1
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    buildFilter:
+      paths:
+        - backend/**
+        - package.json
+        - package-lock.json
+        - render.yaml
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      # Render terminates TLS in front of the app.
+      - key: TRUST_PROXY
+        value: "true"
+      # Default zone for brand-new accounts. Existing users keep their own setting.
+      - key: TIMEZONE
+        value: Asia/Jerusalem
+      - key: SUMMARY_LANGUAGE
+        value: Hebrew
+      - key: SUMMARY_HOUR
+        value: "7"
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: SUMMARY_CRON
+        value: "*/15 * * * *"
+      - key: WATCHLIST_CRON
+        value: "*/5 * * * *"
+      - key: DASHBOARD_CACHE_TTL_SECONDS
+        value: "90"
+      - key: SUMMARY_MIN_REFRESH_SECONDS
+        value: "60"
+      - key: MONGODB_DB_NAME
+        value: user_dashboard
+      # At least 32 characters. Render generates this on first create.
+      - key: SESSION_SECRET
+        generateValue: true
+      # Exactly 64 hex characters. Generate locally, then paste when prompted:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      # Losing it makes every stored provider token unreadable.
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      # The Vercel origin, no trailing slash. OAuth sends the browser here.
+      #   https://<project>.vercel.app
+      - key: FRONTEND_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      # Must be the Vercel URL, not the onrender.com URL. The browser only
+      # talks to Vercel; Vercel proxies /auth/* to this service.
+      #   https://<project>.vercel.app/auth/google/callback
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
+      - key: NOTION_CLIENT_ID
+        sync: false
+      - key: NOTION_CLIENT_SECRET
+        sync: false
+      #   https://<project>.vercel.app/auth/notion/callback
+      - key: NOTION_REDIRECT_URI
+        sync: false
+      - key: STRAVA_CLIENT_ID
+        sync: false
+      - key: STRAVA_CLIENT_SECRET
+        sync: false
+      #   https://<project>.vercel.app/auth/strava/callback
+      - key: STRAVA_REDIRECT_URI
+        sync: false

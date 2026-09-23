@@ -17,28 +17,16 @@ const ROUTINE_HOUR = {
  * still appears with its default rather than crashing an old payload.
  */
 export function layoutFromOnboarding({ primaryFocus, hobbies = [], dailyRoutine }) {
-  const enabled = new Set(['summary']);
+  const enabled = new Set(['summary', 'tip', 'timeline', 'tasks', 'emails']);
   const hobbySet = new Set(hobbies);
 
-  if (primaryFocus === 'academic') {
-    ['notion', 'tasks', 'schedule', 'emails', 'tip', 'parcels', 'nutrition'].forEach((id) =>
-      enabled.add(id),
-    );
-  } else if (primaryFocus === 'software') {
-    ['tasks', 'emails', 'schedule', 'watchlist', 'notion', 'tip', 'parcels', 'nutrition'].forEach(
-      (id) => enabled.add(id),
-    );
-  } else {
-    ['schedule', 'tasks', 'emails', 'parcels', 'nutrition', 'notion', 'tip'].forEach((id) =>
-      enabled.add(id),
-    );
-  }
+  if (primaryFocus === 'academic') enabled.add('notion');
 
   if (hobbySet.has('running') || hobbySet.has('mountain_biking')) {
     enabled.add('weather');
     enabled.add('activity');
   }
-  if (hobbySet.has('drone')) enabled.add('weather');
+  if (hobbySet.has('drone') || dailyRoutine === 'outdoor') enabled.add('weather');
 
   const rest = WIDGET_IDS.filter((id) => id !== 'summary');
   let order = ['summary', ...rest];
@@ -46,9 +34,9 @@ export function layoutFromOnboarding({ primaryFocus, hobbies = [], dailyRoutine 
   if (dailyRoutine === 'outdoor') {
     order = uniqueOrder(['summary', 'weather', 'activity', ...rest]);
   } else if (dailyRoutine === 'work') {
-    order = uniqueOrder(['summary', 'schedule', 'emails', 'tasks', 'notion', ...rest]);
+    order = uniqueOrder(['summary', 'timeline', 'emails', 'tasks', 'ask', 'notion', ...rest]);
   } else {
-    order = uniqueOrder(['summary', 'tip', 'weather', 'schedule', ...rest]);
+    order = uniqueOrder(['summary', 'tip', 'ask', 'weather', 'timeline', ...rest]);
   }
 
   return normalizeLayout({

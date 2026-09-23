@@ -3,12 +3,13 @@
  * Titles live in i18n; availability is separate from "enabled".
  */
 export const WIDGET_META = {
-  summary: { span: 2 },
+  summary: { span: 2, pin: 'briefing' },
   tip: { span: 2, pin: 'top' },
   weather: { span: 1 },
-  schedule: { span: 1 },
+  timeline: { span: 2 },
   tasks: { span: 1 },
   emails: { span: 1 },
+  ask: { span: 2 },
   parcels: { span: 1 },
   nutrition: { span: 1 },
   notion: { span: 1 },
@@ -16,6 +17,12 @@ export const WIDGET_META = {
   usd: { span: 1 },
   watchlist: { span: 1 },
 };
+
+const PIN_RANK = { top: 0, briefing: 1 };
+
+/** Day-planning tiles sit in the first column. Everything else stacks beside them. */
+export const DAY_WIDGET_IDS = ['timeline', 'tasks', 'emails', 'ask'];
+const DAY_WIDGET_SET = new Set(DAY_WIDGET_IDS);
 
 export function isWidgetAvailable(id, session) {
   const offered = session?.offered || {};
@@ -40,14 +47,28 @@ export function visibleWidgets(session) {
   );
 }
 
-/** Pinned tiles (the daily tip) render above the sortable grid. */
+/** Pinned tiles render above the two-column board (tip, then morning briefing). */
 export function pinnedWidgets(session) {
-  return visibleWidgets(session).filter((widget) => WIDGET_META[widget.id]?.pin === 'top');
+  return visibleWidgets(session)
+    .filter((widget) => WIDGET_META[widget.id]?.pin)
+    .sort(
+      (a, b) =>
+        (PIN_RANK[WIDGET_META[a.id]?.pin] ?? 9) - (PIN_RANK[WIDGET_META[b.id]?.pin] ?? 9),
+    );
 }
 
 export function gridWidgets(session) {
-  return visibleWidgets(session).filter((widget) => WIDGET_META[widget.id]?.pin !== 'top');
+  return visibleWidgets(session).filter((widget) => !WIDGET_META[widget.id]?.pin);
 }
+
+export function isDayWidget(id) {
+  return DAY_WIDGET_SET.has(id);
+}
+
+/** Status rows on a Today tile before “open the rest”. */
+export const SCAN_PREVIEW = 2;
+/** Around-you tiles shown before “More”. */
+export const AROUND_CAP = 3;
 
 export function hiddenWidgets(session) {
   return layoutWidgets(session).filter(

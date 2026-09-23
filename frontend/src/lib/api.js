@@ -13,6 +13,10 @@ export class ApiError extends Error {
   }
 }
 
+export function isAbortError(error) {
+  return error?.name === 'AbortError' || error?.code === 20;
+}
+
 async function request(path, options = {}) {
   const response = await fetch(path, {
     credentials: 'include',
@@ -34,8 +38,8 @@ export const NOTION_CONNECT_URL = '/auth/notion';
 export const STRAVA_CONNECT_URL = '/auth/strava';
 
 export const api = {
-  me: () => request('/api/me'),
-  settings: () => request('/api/settings'),
+  me: (options) => request('/api/me', options),
+  settings: (options) => request('/api/settings', options),
   updateSettings: (patch) =>
     request('/api/settings', { method: 'PATCH', body: JSON.stringify(patch) }),
   notionDataSources: () => request('/api/notion/data-sources'),
@@ -46,9 +50,17 @@ export const api = {
     }),
   disconnect: (provider) => request(`/auth/${provider}`, { method: 'DELETE' }),
   deleteAccount: () => request('/auth/account', { method: 'DELETE' }),
-  dashboard: () => request('/api/dashboard'),
+  dashboard: (options = {}) => {
+    const { fast, ...rest } = options;
+    return request(fast ? '/api/dashboard?fast=1' : '/api/dashboard', rest);
+  },
   createTask: (body) => request('/api/tasks', { method: 'POST', body: JSON.stringify(body) }),
   createEvent: (body) => request('/api/events', { method: 'POST', body: JSON.stringify(body) }),
+  moveEvent: (eventId, body) =>
+    request(`/api/events/${encodeURIComponent(eventId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   deleteEvent: (eventId) =>
     request(`/api/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }),
   completeTask: (listId, taskId) =>
@@ -63,28 +75,38 @@ export const api = {
     request(`/api/tasks/${encodeURIComponent(listId)}/${encodeURIComponent(taskId)}`, {
       method: 'DELETE',
     }),
-  summary: () => request('/api/summary'),
-  refreshSummary: () => request('/api/summary/refresh', { method: 'POST' }),
+  summary: (options = {}) => {
+    const { language, ...rest } = options;
+    const params = new URLSearchParams();
+    if (language) params.set('language', language);
+    const query = params.toString();
+    return request(query ? `/api/summary?${query}` : '/api/summary', rest);
+  },
+  refreshSummary: (options) =>
+    request('/api/summary/refresh', { ...options, method: 'POST' }),
+  askWeek: (question) =>
+    request('/api/week/ask', { method: 'POST', body: JSON.stringify({ question }) }),
   logout: () => request('/auth/logout', { method: 'POST' }),
-  suggestPlaces: (q, bias) => {
+  suggestPlaces: (q, bias, options) => {
     const params = new URLSearchParams({ q });
     if (Number.isFinite(bias?.lat) && Number.isFinite(bias?.lon)) {
       params.set('lat', String(bias.lat));
       params.set('lon', String(bias.lon));
     }
-    return request(`/api/places/suggest?${params}`);
+    return request(`/api/places/suggest?${params}`, options);
   },
-  placeEta: (origin) => {
+  placeEta: (origin, options) => {
     const params = new URLSearchParams();
     if (Number.isFinite(origin?.lat) && Number.isFinite(origin?.lon)) {
       params.set('lat', String(origin.lat));
       params.set('lon', String(origin.lon));
     }
     const query = params.toString();
-    return request(`/api/places/eta${query ? `?${query}` : ''}`);
+    return request(`/api/places/eta${query ? `?${query}` : ''}`, options);
   },
-  searchQuotes: (q) => request(`/api/quotes/search?${new URLSearchParams({ q })}`),
-  quote: (symbol) => request(`/api/quotes/one?${new URLSearchParams({ symbol })}`),
+  searchQuotes: (q, options) => request(`/api/quotes/search?${new URLSearchParams({ q })}`, options),
+  quote: (symbol, options) =>
+    request(`/api/quotes/one?${new URLSearchParams({ symbol })}`, options),
   addWatchlistItem: (body) =>
     request('/api/watchlist/items', { method: 'POST', body: JSON.stringify(body) }),
   removeWatchlistItem: (itemId) =>
@@ -108,14 +130,30 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ customAIPrompt }),
     }),
-  searchNutrition: (q) => request(`/api/nutrition/search?${new URLSearchParams({ q })}`),
-  nutritionBarcode: (code) => request(`/api/nutrition/barcode/${encodeURIComponent(code)}`),
-  estimateNutrition: (query) =>
-    request('/api/nutrition/estimate', { method: 'POST', body: JSON.stringify({ query }) }),
-  analyzeMeal: (image) =>
-    request('/api/nutrition/analyze-meal', { method: 'POST', body: JSON.stringify({ image }) }),
+  searchNutrition: (q, options) =>
+    request(`/api/nutrition/search?${new URLSearchParams({ q })}`, options),
+  nutritionBarcode: (code, options) =>
+    request(`/api/nutrition/barcode/${encodeURIComponent(code)}`, options),
+  estimateNutrition: (query, options) =>
+    request('/api/nutrition/estimate', {
+      ...options,
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    }),
+  analyzeMeal: (image, options) =>
+    request('/api/nutrition/analyze-meal', {
+      ...options,
+      method: 'POST',
+      body: JSON.stringify({ image }),
+    }),
+  nutritionToday: (options) => request('/api/nutrition/today', options),
   addNutritionEntry: (body) =>
     request('/api/nutrition/log', { method: 'POST', body: JSON.stringify(body) }),
   removeNutritionEntry: (entryId) =>
     request(`/api/nutrition/log/${encodeURIComponent(entryId)}`, { method: 'DELETE' }),
+  fxHistory: ({ from, to, days }, options) => {
+    const params = new URLSearchParams({ from, to });
+    if (days) params.set('days', String(days));
+    return request(`/api/fx/history?${params}`, options);
+  },
 };

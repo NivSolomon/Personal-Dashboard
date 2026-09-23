@@ -46,7 +46,9 @@ export async function nutritionRoutes(app) {
     }
   });
 
-  app.post('/api/nutrition/estimate', async (request, reply) => {
+  app.post('/api/nutrition/estimate', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const q = String(request.body?.query || request.body?.q || '').trim();
     if (q.length < 2) return reply.code(400).send({ error: 'invalid_query' });
     try {
@@ -63,7 +65,10 @@ export async function nutritionRoutes(app) {
 
   app.post(
     '/api/nutrition/analyze-meal',
-    { bodyLimit: 5 * 1024 * 1024 },
+    {
+      bodyLimit: 5 * 1024 * 1024,
+      config: { rateLimit: { max: 8, timeWindow: '1 minute' } },
+    },
     async (request, reply) => {
       const parsed = parseMealImage(request.body || {});
       if (parsed.error) return reply.code(400).send({ error: parsed.error });
