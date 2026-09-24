@@ -18,7 +18,10 @@ async function get(url, { lat, lon }) {
     units: 'metric',
     lang: 'he',
   });
-  const response = await fetch(`${url}?${query}`, { signal: AbortSignal.timeout(8000) });
+  const response = await fetch(`${url}?${query}`, {
+    credentials: 'include',
+    signal: AbortSignal.timeout(8000),
+  });
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     throw new Error(`OpenWeather ${response.status}: ${body.slice(0, 200)}`);
@@ -261,6 +264,7 @@ async function fetchOpenMeteoWeek({ lat, lon, timeZone }) {
       'temperature_2m,apparent_temperature,precipitation_probability,weather_code,wind_speed_10m,relative_humidity_2m',
   });
   const response = await fetch(`https://api.open-meteo.com/v1/forecast?${query}`, {
+    credentials: 'include',
     signal: AbortSignal.timeout(8000),
   });
   if (!response.ok) {

@@ -49,6 +49,7 @@ function haversineMeters(from, to) {
 
 async function wazeJson(url) {
   const response = await fetch(url, {
+    credentials: 'include',
     headers: HEADERS,
     signal: AbortSignal.timeout(10000),
   });

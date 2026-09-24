@@ -43,6 +43,7 @@ export function getStravaAuthUrl(state) {
 
 async function tokenRequest(body) {
   const response = await fetch(TOKEN_URL, {
+    credentials: 'include',
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -84,6 +85,7 @@ async function accessTokenFor(userId) {
 
 async function callApi(path, token, params = {}) {
   const response = await fetch(`${API_URL}${path}?${new URLSearchParams(params)}`, {
+    credentials: 'include',
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(10000),
   });

@@ -26,6 +26,7 @@ export async function exchangeNotionCode(code) {
   );
 
   const response = await fetch(TOKEN_URL, {
+    credentials: 'include',
     method: 'POST',
     headers: {
       Authorization: `Basic ${basic}`,

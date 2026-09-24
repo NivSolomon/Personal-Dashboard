@@ -15,7 +15,11 @@ function round(value, digits) {
 }
 
 async function getJson(url) {
-  const response = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(8000) });
+  const response = await fetch(url, {
+    credentials: 'include',
+    headers: HEADERS,
+    signal: AbortSignal.timeout(8000),
+  });
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     throw new Error(`Yahoo Finance ${response.status}: ${body.slice(0, 200)}`);

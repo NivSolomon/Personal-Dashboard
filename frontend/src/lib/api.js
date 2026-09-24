@@ -19,8 +19,8 @@ export function isAbortError(error) {
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
-    credentials: 'include',
     ...options,
+    credentials: 'include',
     // Fastify rejects a JSON content-type with an empty body, so the header is only
     // declared when there is actually something to parse.
     headers: {

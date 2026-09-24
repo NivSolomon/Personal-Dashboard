@@ -45,6 +45,7 @@ export async function suggestPlaces(query, { lat = null, lon = null } = {}) {
   params.set('lon', String(biasLon));
 
   const response = await fetch(`${PHOTON_URL}?${params}`, {
+    credentials: 'include',
     headers: {
       Accept: 'application/json',
       'User-Agent': 'UserDashboard/1.0 (personal dashboard address lookup)',

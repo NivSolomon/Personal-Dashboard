@@ -14,7 +14,10 @@ import { connectDb, disconnectDb } from './store/db.js';
 import { readSession } from './lib/session.js';
 
 async function publicIp() {
-  const response = await fetch('https://api.ipify.org', { signal: AbortSignal.timeout(4000) });
+  const response = await fetch('https://api.ipify.org', {
+    credentials: 'include',
+    signal: AbortSignal.timeout(4000),
+  });
   if (!response.ok) throw new Error('ip lookup failed');
   return response.text();
 }

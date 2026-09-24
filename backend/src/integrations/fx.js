@@ -24,6 +24,7 @@ function daysAgo(days) {
 
 async function frankfurter(path) {
   const response = await fetch(`${RANGE_URL}${path}`, {
+    credentials: 'include',
     signal: AbortSignal.timeout(8000),
   });
   if (!response.ok) {
