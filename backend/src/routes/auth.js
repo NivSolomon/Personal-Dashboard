@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { config, isNotionConfigured, isStravaConfigured } from '../config.js';
 import { exchangeCodeForTokens, fetchProfile, getAuthUrl } from '../google/client.js';
 import { fetchProfileAddresses } from '../google/people.js';
@@ -7,6 +6,7 @@ import { exchangeNotionCode, getNotionAuthUrl } from '../integrations/notionOAut
 import {
   deleteUser,
   disconnectProvider,
+  getUser,
   saveNotionConnection,
   saveStravaTokens,
   updateSettings,
@@ -15,19 +15,43 @@ import {
 import {
   clearSession,
   consumeOAuthState,
+  issueLoginTicket,
+  issueOAuthState,
+  issueSessionToken,
+  oauthStateMatches,
+  readLoginTicket,
   readSession,
   setOAuthState,
   setSession,
 } from '../lib/session.js';
+
+function redirectWithLogin(path, userId) {
+  const url = new URL(path, config.frontendUrl.endsWith('/') ? config.frontendUrl : `${config.frontendUrl}/`);
+  if (userId) url.searchParams.set('login', issueLoginTicket(userId));
+  return url.toString();
+}
 
 export async function authRoutes(app) {
   // Step 1: send the browser to Google's consent screen.
   app.get('/auth/google', {
     config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
   }, async (request, reply) => {
-    const state = randomUUID();
+    const state = issueOAuthState();
     setOAuthState(reply, state);
     return reply.redirect(getAuthUrl(state));
+  });
+
+  // The Google redirect often drops the session cookie on the way through the
+  // Vercel proxy. The page trades this short ticket for a bearer token.
+  app.post('/auth/session', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const userId = readLoginTicket(request.body?.ticket);
+    if (!userId) return reply.code(401).send({ error: 'login_expired' });
+    const user = await getUser(userId);
+    if (!user) return reply.code(401).send({ error: 'not_authenticated' });
+    setSession(reply, userId);
+    return { token: issueSessionToken(userId) };
   });
 
   // Step 2: Google redirects back with a one-time code.
@@ -37,7 +61,7 @@ export async function authRoutes(app) {
 
     if (error) return reply.redirect(`${config.frontendUrl}/?error=${encodeURIComponent(error)}`);
     if (!code) return reply.redirect(`${config.frontendUrl}/?error=missing_code`);
-    if (!state || state !== expectedState) {
+    if (!oauthStateMatches(state, expectedState)) {
       return reply.redirect(`${config.frontendUrl}/?error=state_mismatch`);
     }
 
@@ -67,7 +91,7 @@ export async function authRoutes(app) {
       }
 
       request.log.info({ userId: profile.id }, 'google account connected');
-      return reply.redirect(config.frontendUrl);
+      return reply.redirect(redirectWithLogin('/', profile.id));
     } catch (err) {
       request.log.error({ err }, 'oauth callback failed');
       return reply.redirect(`${config.frontendUrl}/?error=oauth_failed`);
@@ -84,7 +108,7 @@ export async function authRoutes(app) {
   if (isNotionConfigured()) {
     app.get('/auth/notion', async (request, reply) => {
       if (!readSession(request)) return reply.redirect(`${config.frontendUrl}/?error=login_first`);
-      const state = randomUUID();
+      const state = issueOAuthState();
       setOAuthState(reply, state);
       return reply.redirect(getNotionAuthUrl(state));
     });
@@ -99,7 +123,7 @@ export async function authRoutes(app) {
       if (error) return back(encodeURIComponent(error));
       if (!userId) return back('login_first');
       if (!code) return back('missing_code');
-      if (!state || state !== expectedState) return back('state_mismatch');
+      if (!oauthStateMatches(state, expectedState)) return back('state_mismatch');
 
       try {
         const connection = await exchangeNotionCode(code);
@@ -118,7 +142,7 @@ export async function authRoutes(app) {
   if (isStravaConfigured()) {
     app.get('/auth/strava', async (request, reply) => {
       if (!readSession(request)) return reply.redirect(`${config.frontendUrl}/?error=login_first`);
-      const state = randomUUID();
+      const state = issueOAuthState();
       setOAuthState(reply, state);
       return reply.redirect(getStravaAuthUrl(state));
     });
@@ -134,7 +158,7 @@ export async function authRoutes(app) {
       if (error) return back(encodeURIComponent(error));
       if (!userId) return back('login_first');
       if (!code) return back('missing_code');
-      if (!state || state !== expectedState) return back('state_mismatch');
+      if (!oauthStateMatches(state, expectedState)) return back('state_mismatch');
 
       try {
         const tokens = await exchangeStravaCode(code);

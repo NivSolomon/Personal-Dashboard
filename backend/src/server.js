@@ -57,6 +57,13 @@ export async function buildServer() {
   await app.register(cors, { origin: config.frontendUrl, credentials: true });
   await app.register(cookie, { secret: config.sessionSecret });
   await app.register(compress, { global: true, encodings: ['br', 'gzip'] });
+  app.addHook('onRequest', async (request, reply) => {
+    const path = request.url.split('?')[0];
+    if (path.startsWith('/api') || path.startsWith('/auth')) {
+      reply.header('Cache-Control', 'private, no-store');
+      reply.header('CDN-Cache-Control', 'no-store');
+    }
+  });
   await app.register(rateLimit, {
     global: true,
     max: 120,

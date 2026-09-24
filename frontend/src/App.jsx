@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
-import { api, isAbortError } from './lib/api.js';
+import { api, isAbortError, setAuthToken } from './lib/api.js';
 import { errorKind, sessionErrorCopy } from './lib/errors.js';
 import { todayLabel } from './lib/format.js';
 import { useTheme } from './lib/theme.js';
@@ -429,36 +429,60 @@ export default function App() {
       if (me.settings?.language) setGuestLanguage(normalizeLanguage(me.settings.language));
     };
 
-    const meP = api.me({ signal });
-    const dashP = api.dashboard({ signal, fast: true }).catch((error) => ({ __error: error }));
-
-    meP
-      .then((me) => {
-        if (signal.aborted) return;
-        applyMe(me);
-      })
-      .catch((error) => {
-        if (isAbortError(error)) return;
-        setSession(error.needsLogin ? { status: 'anon' } : { status: 'error', kind: errorKind(error) });
-      });
-
-    dashP.then((data) => {
-      if (signal.aborted || data?.__error) return;
-      const current = sessionRef.current;
-      if (current.status === 'anon' || current.status === 'error') return;
-      if (
-        current.status === 'authed' &&
-        (!current.hasCompletedOnboarding || !placesReady(current.settings))
-      ) {
-        return;
+    async function boot() {
+      const params = new URLSearchParams(window.location.search);
+      const ticket = params.get('login');
+      if (ticket) {
+        try {
+          const { token } = await api.claimSession(ticket, { signal });
+          if (signal.aborted) return;
+          setAuthToken(token);
+          params.delete('login');
+          const query = params.toString();
+          window.history.replaceState(
+            null,
+            '',
+            `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+          );
+        } catch (error) {
+          if (isAbortError(error)) return;
+          setAuthToken(null);
+        }
       }
-      const next = mergeDashboard(dashboardRef.current, data);
-      setDashboard(next);
-      setDashboardLoading(false);
-      const userId = current.user?.id;
-      if (userId) writeBoardSnapshot({ userId, dashboard: next, summary: summaryRef.current });
-    });
+      if (signal.aborted) return;
 
+      const meP = api.me({ signal });
+      const dashP = api.dashboard({ signal, fast: true }).catch((error) => ({ __error: error }));
+
+      meP
+        .then((me) => {
+          if (signal.aborted) return;
+          applyMe(me);
+        })
+        .catch((error) => {
+          if (isAbortError(error)) return;
+          setSession(error.needsLogin ? { status: 'anon' } : { status: 'error', kind: errorKind(error) });
+        });
+
+      dashP.then((data) => {
+        if (signal.aborted || data?.__error) return;
+        const current = sessionRef.current;
+        if (current.status === 'anon' || current.status === 'error') return;
+        if (
+          current.status === 'authed' &&
+          (!current.hasCompletedOnboarding || !placesReady(current.settings))
+        ) {
+          return;
+        }
+        const next = mergeDashboard(dashboardRef.current, data);
+        setDashboard(next);
+        setDashboardLoading(false);
+        const userId = current.user?.id;
+        if (userId) writeBoardSnapshot({ userId, dashboard: next, summary: summaryRef.current });
+      });
+    }
+
+    void boot();
     return () => controller.abort();
   }, []);
 
@@ -547,6 +571,7 @@ export default function App() {
   }, [loadDashboard, loadSummary]);
 
   const handleLogout = useCallback(async () => {
+    setAuthToken(null);
     await api.logout().catch(() => {});
     clearBoardSnapshot();
     setDashboard(EMPTY_DASHBOARD);

@@ -8,20 +8,12 @@
     {
       "src": "/api/(.*)",
       "dest": "${VITE_BACKEND_URL}/api/$1",
-      "env": ["VITE_BACKEND_URL"],
-      "headers": {
-        "Cache-Control": "private, no-store",
-        "CDN-Cache-Control": "no-store"
-      }
+      "env": ["VITE_BACKEND_URL"]
     },
     {
       "src": "/auth/(.*)",
       "dest": "${VITE_BACKEND_URL}/auth/$1",
-      "env": ["VITE_BACKEND_URL"],
-      "headers": {
-        "Cache-Control": "private, no-store",
-        "CDN-Cache-Control": "no-store"
-      }
+      "env": ["VITE_BACKEND_URL"]
     }
   ],
   "rewrites": [

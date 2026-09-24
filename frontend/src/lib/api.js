@@ -17,7 +17,27 @@ export function isAbortError(error) {
   return error?.name === 'AbortError' || error?.code === 20;
 }
 
+const TOKEN_KEY = 'session-token';
+
+export function authToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // Private mode can reject storage; the cookie remains the fallback.
+  }
+}
+
 async function request(path, options = {}) {
+  const token = authToken();
   const response = await fetch(path, {
     ...options,
     credentials: 'include',
@@ -25,11 +45,13 @@ async function request(path, options = {}) {
     // declared when there is actually something to parse.
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : null),
+      ...(token ? { Authorization: `Bearer ${token}` } : null),
       ...options.headers,
     },
   });
 
   const body = response.status === 204 ? null : await response.json().catch(() => null);
+  if (response.status === 401) setAuthToken(null);
   if (!response.ok) throw new ApiError(response.status, body);
   return body;
 }
@@ -38,6 +60,12 @@ export const NOTION_CONNECT_URL = '/auth/notion';
 export const STRAVA_CONNECT_URL = '/auth/strava';
 
 export const api = {
+  claimSession: (ticket, options) =>
+    request('/auth/session', {
+      ...options,
+      method: 'POST',
+      body: JSON.stringify({ ticket }),
+    }),
   me: (options) => request('/api/me', options),
   settings: (options) => request('/api/settings', options),
   updateSettings: (patch) =>
@@ -49,7 +77,13 @@ export const api = {
       body: JSON.stringify({ kind, dataSourceId }),
     }),
   disconnect: (provider) => request(`/auth/${provider}`, { method: 'DELETE' }),
-  deleteAccount: () => request('/auth/account', { method: 'DELETE' }),
+  deleteAccount: async () => {
+    try {
+      return await request('/auth/account', { method: 'DELETE' });
+    } finally {
+      setAuthToken(null);
+    }
+  },
   dashboard: (options = {}) => {
     const { fast, ...rest } = options;
     return request(fast ? '/api/dashboard?fast=1' : '/api/dashboard', rest);
@@ -86,7 +120,13 @@ export const api = {
     request('/api/summary/refresh', { ...options, method: 'POST' }),
   askWeek: (question) =>
     request('/api/week/ask', { method: 'POST', body: JSON.stringify({ question }) }),
-  logout: () => request('/auth/logout', { method: 'POST' }),
+  logout: async () => {
+    try {
+      return await request('/auth/logout', { method: 'POST' });
+    } finally {
+      setAuthToken(null);
+    }
+  },
   suggestPlaces: (q, bias, options) => {
     const params = new URLSearchParams({ q });
     if (Number.isFinite(bias?.lat) && Number.isFinite(bias?.lon)) {
