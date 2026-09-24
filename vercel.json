@@ -7,8 +7,8 @@
     { "handle": "filesystem" },
     {
       "src": "/api/(.*)",
-      "dest": "${BACKEND_URL}/api/$1",
-      "env": ["BACKEND_URL"],
+      "dest": "${VITE_BACKEND_URL}/api/$1",
+      "env": ["VITE_BACKEND_URL"],
       "headers": {
         "Cache-Control": "private, no-store",
         "CDN-Cache-Control": "no-store"
@@ -16,8 +16,8 @@
     },
     {
       "src": "/auth/(.*)",
-      "dest": "${BACKEND_URL}/auth/$1",
-      "env": ["BACKEND_URL"],
+      "dest": "${VITE_BACKEND_URL}/auth/$1",
+      "env": ["VITE_BACKEND_URL"],
       "headers": {
         "Cache-Control": "private, no-store",
         "CDN-Cache-Control": "no-store"
