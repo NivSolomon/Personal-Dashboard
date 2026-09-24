@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { Spinner } from './BusyStatus.jsx';
 import { BriefcaseIcon, HomeIcon } from './icons.jsx';
 import { api, isAbortError } from '../lib/api.js';
 import { useT } from '../lib/i18n.jsx';
@@ -48,6 +49,7 @@ export default function AddressInput({
   const rootRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [remote, setRemote] = useState([]);
+  const [searching, setSearching] = useState(false);
   const [active, setActive] = useState(-1);
   const saved = savedSuggestions(savedPlaces, value, t);
   const remoteOnly = remote.filter(
@@ -59,22 +61,28 @@ export default function AddressInput({
     const q = value.trim();
     if (q.length < 2 || /^https?:\/\//i.test(q)) {
       setRemote([]);
+      setSearching(false);
       return undefined;
     }
 
     const controller = new AbortController();
     const handle = setTimeout(() => {
+      setSearching(true);
       api
         .suggestPlaces(q, bias, { signal: controller.signal })
         .then((body) => setRemote(body.places || []))
         .catch((error) => {
           if (!isAbortError(error)) setRemote([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearching(false);
         });
     }, 280);
 
     return () => {
       clearTimeout(handle);
       controller.abort();
+      setSearching(false);
     };
   }, [value, bias?.lat, bias?.lon]);
 
@@ -146,6 +154,12 @@ export default function AddressInput({
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
       />
+      {searching && (
+        <p className="text-muted mt-1.5 flex items-center gap-2 text-xs" role="status" aria-live="polite">
+          <Spinner className="size-3.5" />
+          {t('address.searching')}
+        </p>
+      )}
       {showList && (
         <ul
           id={listId}

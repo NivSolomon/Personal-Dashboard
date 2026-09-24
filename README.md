@@ -1,6 +1,13 @@
-# MyDashi
+<p align="center">
+  <img src="docs/mydashi-banner.svg" alt="MyDashi. Your day, at a glance. A morning board for calendar, tasks, and mail, in English and Hebrew." width="920">
+</p>
 
-**Your day, at a glance.** Calendar, tasks, and mail, folded into one morning board you can rearrange, hide, and talk to.
+<p align="center">
+  <a href="https://nodejs.org/"><img alt="Node.js 22" src="https://img.shields.io/badge/Node.js-22-312e81?style=flat-square&amp;logo=nodedotjs&amp;logoColor=a5b4fc"></a>
+  <a href="https://react.dev/"><img alt="React 19" src="https://img.shields.io/badge/React-19-312e81?style=flat-square&amp;logo=react&amp;logoColor=a5b4fc"></a>
+  <img alt="English and Hebrew" src="https://img.shields.io/badge/English_%C2%B7_%D7%A2%D7%91%D7%A8%D7%99%D7%AA-bilingual-312e81?style=flat-square">
+  <img alt="Light and dark" src="https://img.shields.io/badge/light_%26_dark-theme-312e81?style=flat-square">
+</p>
 
 Sign in with Google, answer three short questions, and MyDashi lays out a board that matches how you start the day. A briefing lands at the hour you pick. English and Hebrew are both first-class, including right-to-left layout.
 

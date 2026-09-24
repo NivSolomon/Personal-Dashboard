@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Spinner } from './BusyStatus.jsx';
 import { playUi } from '../lib/sounds.js';
 import { useT } from '../lib/i18n.jsx';
 
@@ -68,8 +69,9 @@ export default function Toast({
           type="button"
           disabled={busy}
           onClick={onAction}
-          className="text-tone-indigo-fg shrink-0 text-sm font-semibold hover:underline disabled:opacity-50"
+          className="text-tone-indigo-fg inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold hover:underline disabled:opacity-50"
         >
+          {busy && <Spinner className="size-3.5" />}
           {busy ? t('undoing') : actionLabel}
         </button>
       )}

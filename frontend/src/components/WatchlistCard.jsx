@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import BusyStatus, { Spinner } from './BusyStatus.jsx';
 import Card from './Card.jsx';
 import Modal from './Modal.jsx';
 import WatchlistEditor from './WatchlistEditor.jsx';
@@ -216,9 +217,9 @@ function AlertLine({ item, alert, onRemove, removing }) {
         aria-label={t('watch.deleteAlert')}
         disabled={removing}
         onClick={() => onRemove(alert.id)}
-        className="opacity-70 hover:opacity-100"
+        className="inline-flex opacity-70 hover:opacity-100"
       >
-        ×
+        {removing ? <Spinner className="size-3" /> : '×'}
       </button>
     </span>
   );
@@ -336,8 +337,9 @@ function WatchlistCard({
         type="button"
         onClick={ackAll}
         disabled={busy === 'ack'}
-        className="shrink-0 text-xs font-medium underline disabled:opacity-50"
+        className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium underline disabled:opacity-50"
       >
+        {busy === 'ack' && <Spinner className="size-3" />}
         {t('watch.ack')}
       </button>
     </div>
@@ -421,9 +423,9 @@ function WatchlistCard({
             aria-label={t('settings.removeNamed', { symbol: item.symbol })}
             disabled={busy === `del-${item.id}`}
             onClick={() => run(`del-${item.id}`, () => api.removeWatchlistItem(item.id))}
-            className="text-muted hover:text-tone-rose-fg ms-auto"
+            className="text-muted hover:text-tone-rose-fg ms-auto inline-flex"
           >
-            <TrashIcon className="size-3.5" />
+            {busy === `del-${item.id}` ? <Spinner className="size-3.5" /> : <TrashIcon className="size-3.5" />}
           </button>
         </div>
         {addingAlertFor === item.id && (
@@ -465,8 +467,9 @@ function WatchlistCard({
             <button
               type="submit"
               disabled={busy === `alert-${item.id}`}
-              className="bg-tone-green text-tone-green-fg rounded-lg px-2 py-1 text-xs font-medium disabled:opacity-50"
+              className="bg-tone-green text-tone-green-fg inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium disabled:opacity-50"
             >
+              {busy === `alert-${item.id}` && <Spinner className="size-3" />}
               {t('save')}
             </button>
           </form>
@@ -591,12 +594,7 @@ function WatchlistCard({
             ))}
           </div>
 
-          {!history && (
-            <p className="text-muted flex items-center gap-2 text-sm">
-              <ChartIcon className="size-4" />
-              {t('watch.chartLoading')}
-            </p>
-          )}
+          {!history && <BusyStatus label={t('watch.chartLoading')} tone="green" />}
           {history?.error && <p className="text-tone-rose-fg text-sm">{t('watch.chartError')}</p>}
           {history?.points && (
             <>

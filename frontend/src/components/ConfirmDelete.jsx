@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Spinner } from './BusyStatus.jsx';
 import Modal from './Modal.jsx';
 import { playUi } from '../lib/sounds.js';
 import { useT } from '../lib/i18n.jsx';
@@ -40,8 +41,9 @@ export default function ConfirmDelete({
           type="button"
           onClick={onConfirm}
           disabled={busy}
-          className={`${TONES[tone] || TONES.rose} rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50`}
+          className={`${TONES[tone] || TONES.rose} inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50`}
         >
+          {busy && <Spinner className="size-3.5" />}
           {busy ? busyLabel || t('deleting') : confirmLabel || t('delete')}
         </button>
       </div>

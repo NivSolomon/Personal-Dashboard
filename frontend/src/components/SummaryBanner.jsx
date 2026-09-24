@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { Spinner } from './BusyStatus.jsx';
 import { SparkleIcon } from './icons.jsx';
 import { relativeTime } from '../lib/format.js';
 import { summaryErrorText, summaryThrottleText } from '../lib/errors.js';
@@ -40,7 +41,10 @@ function SummaryBanner({ summary, loading, error, refreshing, onRetry }) {
           {t('widget.summary.title')}
         </h2>
         {refreshing && sentences.length > 0 && (
-          <p className="text-[11px] font-medium text-white/70">{t('summary.refreshing')}</p>
+          <p className="inline-flex items-center gap-1.5 text-[11px] font-medium text-white/70">
+            <Spinner className="size-3" />
+            {t('summary.refreshing')}
+          </p>
         )}
       </div>
 
@@ -50,7 +54,10 @@ function SummaryBanner({ summary, loading, error, refreshing, onRetry }) {
             <div className="h-4 animate-pulse rounded bg-white/25" />
             <div className="h-4 w-11/12 animate-pulse rounded bg-white/25" />
             <div className="h-4 w-3/4 animate-pulse rounded bg-white/25" />
-            <p className="pt-2 text-xs text-white/70">{t('summary.reading')}</p>
+            <p className="flex items-center gap-2 pt-2 text-xs text-white/70">
+              <Spinner className="size-3.5" />
+              {t('summary.reading')}
+            </p>
           </div>
         ) : error && sentences.length === 0 ? (
           <p className="relative mt-4 rounded-lg bg-white/10 px-3 py-2 text-sm text-white/90">

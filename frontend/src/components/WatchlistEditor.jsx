@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { api, isAbortError } from '../lib/api.js';
 import { watchlistErrorText } from '../lib/errors.js';
+import { Spinner } from './BusyStatus.jsx';
 import { ChartIcon, PlusIcon } from './icons.jsx';
 import { alertOpLabel, currencyLabel, moneyLabel } from '../lib/format.js';
 import { useT } from '../lib/i18n.jsx';
@@ -198,7 +199,8 @@ export default function WatchlistEditor({ onAdded, busy = false, compact = false
             className="border-border bg-surface absolute inset-x-0 z-20 mt-1 max-h-48 overflow-auto rounded-lg border shadow-lg"
           >
             {searching && results.length === 0 && (
-              <li role="status" className="text-muted px-3 py-2 text-xs">
+              <li role="status" className="text-muted flex items-center gap-2 px-3 py-2 text-xs">
+                <Spinner className="size-3.5" />
                 {t('watch.searching')}
               </li>
             )}
@@ -313,7 +315,10 @@ export default function WatchlistEditor({ onAdded, busy = false, compact = false
         className="bg-tone-green text-tone-green-fg inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
       >
         {saving ? (
-          t('watch.adding')
+          <>
+            <Spinner className="size-4" />
+            {t('watch.adding')}
+          </>
         ) : (
           <>
             <PlusIcon className="size-4" />

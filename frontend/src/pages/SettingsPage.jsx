@@ -10,6 +10,7 @@ import {
   ShieldIcon,
   TrashIcon,
 } from '../components/icons.jsx';
+import BusyStatus, { Spinner } from '../components/BusyStatus.jsx';
 import BrandLogo from '../components/BrandLogo.jsx';
 import { SoundToggle } from '../components/SoundFx.jsx';
 import LayoutPicker from '../components/LayoutPicker.jsx';
@@ -366,9 +367,10 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
                 type="button"
                 disabled={busy === 'google'}
                 onClick={() => disconnect('google')}
-                className="text-tone-rose-fg text-sm font-medium hover:underline disabled:opacity-50"
+                className="text-tone-rose-fg inline-flex items-center gap-1.5 text-sm font-medium hover:underline disabled:opacity-50"
               >
-                {t('settings.disconnect')}
+                {busy === 'google' && <Spinner className="size-3.5" />}
+                {busy === 'google' ? t('settings.disconnecting') : t('settings.disconnect')}
               </button>
             </div>
           </li>
@@ -391,9 +393,10 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
                       type="button"
                       disabled={busy === 'notion'}
                       onClick={() => disconnect('notion')}
-                      className="text-tone-rose-fg text-sm font-medium hover:underline disabled:opacity-50"
+                      className="text-tone-rose-fg inline-flex items-center gap-1.5 text-sm font-medium hover:underline disabled:opacity-50"
                     >
-                      {t('settings.disconnect')}
+                      {busy === 'notion' && <Spinner className="size-3.5" />}
+                      {busy === 'notion' ? t('settings.disconnecting') : t('settings.disconnect')}
                     </button>
                   ) : (
                     <a
@@ -438,6 +441,9 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
                   </Field>
                 </div>
               )}
+              {(busy === 'notion-deadlines' || busy === 'notion-workouts') && (
+                <BusyStatus label={t('settings.saving')} tone="indigo" />
+              )}
             </li>
           )}
 
@@ -454,9 +460,10 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
                     type="button"
                     disabled={busy === 'strava'}
                     onClick={() => disconnect('strava')}
-                    className="text-tone-rose-fg text-sm font-medium hover:underline disabled:opacity-50"
+                    className="text-tone-rose-fg inline-flex items-center gap-1.5 text-sm font-medium hover:underline disabled:opacity-50"
                   >
-                    {t('settings.disconnect')}
+                    {busy === 'strava' && <Spinner className="size-3.5" />}
+                    {busy === 'strava' ? t('settings.disconnecting') : t('settings.disconnect')}
                   </button>
                 ) : (
                   <a
@@ -488,6 +495,7 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
           disabled={saving}
           onChange={patchWidget}
         />
+        {saving && openSection === 'layout' && <BusyStatus label={t('settings.saving')} tone="blue" />}
       </SettingsPanel>
 
       <SettingsPanel
@@ -537,10 +545,10 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
                       setBusy(null);
                     }
                   }}
-                  className="text-muted hover:text-tone-rose-fg"
+                  className="text-muted hover:text-tone-rose-fg inline-flex"
                   aria-label={t('settings.removeNamed', { symbol: item.symbol })}
                 >
-                  <TrashIcon className="size-4" />
+                  {busy === `watch-${item.id}` ? <Spinner className="size-4" /> : <TrashIcon className="size-4" />}
                 </button>
               </li>
             ))}
@@ -711,8 +719,9 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
             <button
               type="submit"
               disabled={saving}
-              className="from-banner-from to-banner-to rounded-lg bg-gradient-to-br px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="from-banner-from to-banner-to inline-flex items-center gap-2 rounded-lg bg-gradient-to-br px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
+              {saving && <Spinner className="size-3.5" />}
               {saving ? t('settings.saving') : t('settings.save')}
             </button>
           </div>
@@ -733,9 +742,10 @@ export default function SettingsPage({ account, onAccountChange, onSignedOut, on
           type="button"
           disabled={busy === 'account'}
           onClick={deleteAccount}
-          className="text-tone-rose-fg text-sm font-medium hover:underline disabled:opacity-50"
+          className="text-tone-rose-fg inline-flex items-center gap-1.5 text-sm font-medium hover:underline disabled:opacity-50"
         >
-          {t('settings.deleteAction')}
+          {busy === 'account' && <Spinner className="size-3.5" />}
+          {busy === 'account' ? t('settings.deleting') : t('settings.deleteAction')}
         </button>
       </SettingsPanel>
       </div>

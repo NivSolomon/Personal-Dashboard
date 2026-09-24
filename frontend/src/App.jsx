@@ -16,6 +16,7 @@ import LoginScreen from './components/LoginScreen.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import { SoundFx, SoundToggle } from './components/SoundFx.jsx';
 import LanguageMenu from './components/LanguageMenu.jsx';
+import { Spinner } from './components/BusyStatus.jsx';
 import BrandLogo from './components/BrandLogo.jsx';
 import { GearIcon, LayoutIcon, SignOutIcon } from './components/icons.jsx';
 import WeatherStatus from './components/WeatherStatus.jsx';
@@ -91,7 +92,18 @@ function Shell({
   children,
 }) {
   const { t, language } = useT();
+  const [signingOut, setSigningOut] = useState(false);
   const firstName = displayFirstName(session.user.name, language);
+
+  const logout = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await onLogout();
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl p-6 sm:p-8">
@@ -142,12 +154,14 @@ function Shell({
           </Link>
           <button
             type="button"
-            onClick={onLogout}
-            title={t('logout')}
-            aria-label={t('logout')}
-            className="border-border bg-surface text-muted hover:text-foreground hover:bg-surface-hover grid size-9 place-items-center rounded-lg border transition"
+            onClick={logout}
+            disabled={signingOut}
+            title={signingOut ? t('loggingOut') : t('logout')}
+            aria-label={signingOut ? t('loggingOut') : t('logout')}
+            aria-busy={signingOut}
+            className="border-border bg-surface text-muted hover:text-foreground hover:bg-surface-hover grid size-9 place-items-center rounded-lg border transition disabled:opacity-60"
           >
-            <SignOutIcon className="size-4" />
+            {signingOut ? <Spinner className="size-4" /> : <SignOutIcon className="size-4" />}
           </button>
         </div>
       </header>
@@ -161,7 +175,10 @@ function PageFallback() {
   const { t } = useT();
   return (
     <div className="grid min-h-[40vh] place-items-center p-6">
-      <p className="text-muted text-sm">{t('loading')}</p>
+      <p className="text-muted flex items-center gap-2 text-sm">
+        <Spinner className="size-4" />
+        {t('loading')}
+      </p>
     </div>
   );
 }
@@ -201,7 +218,10 @@ function AppTree({
       <div className="grid min-h-screen place-items-center p-6">
         <div className="rise-in flex flex-col items-center gap-4">
           <BrandLogo className="size-12 rounded-2xl shadow-lg" />
-          <p className="text-muted text-sm">{t('loading')}</p>
+          <p className="text-muted flex items-center gap-2 text-sm">
+            <Spinner className="size-4" />
+            {t('loading')}
+          </p>
         </div>
       </div>
     );

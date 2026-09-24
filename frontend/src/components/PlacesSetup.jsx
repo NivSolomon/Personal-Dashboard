@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../lib/api.js';
 import { playUi } from '../lib/sounds.js';
+import { Spinner } from './BusyStatus.jsx';
 import { BriefcaseIcon, HomeIcon } from './icons.jsx';
 import BrandLogo from './BrandLogo.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
@@ -140,8 +141,9 @@ export default function PlacesSetup({
             <button
               type="submit"
               disabled={saving}
-              className="from-banner-from to-banner-to flex w-full items-center justify-center rounded-xl bg-gradient-to-br px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+              className="from-banner-from to-banner-to flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
             >
+              {saving && <Spinner className="size-4" />}
               {saving ? t('onboard.saving') : t('places.save')}
             </button>
           </form>

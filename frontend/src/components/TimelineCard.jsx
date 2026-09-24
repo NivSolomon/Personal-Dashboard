@@ -12,6 +12,7 @@ import {
   useInteractions,
   useRole,
 } from '@floating-ui/react';
+import { Spinner } from './BusyStatus.jsx';
 import Card from './Card.jsx';
 import Modal from './Modal.jsx';
 import EventForm from './EventForm.jsx';
@@ -777,7 +778,7 @@ function TimelineCard({ plan, events: calendarEvents = [], timeZone, loading, er
                       onClick={() => setPendingDelete(block)}
                       className="text-muted hover:text-tone-rose-fg mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg disabled:opacity-50"
                     >
-                      <TrashIcon className="size-3.5" />
+                      {removingId === block.id ? <Spinner className="size-3.5" /> : <TrashIcon className="size-3.5" />}
                     </button>
                   )}
                 </div>
@@ -804,8 +805,9 @@ function TimelineCard({ plan, events: calendarEvents = [], timeZone, loading, er
                   type="button"
                   onClick={apply}
                   disabled={saving}
-                  className="bg-tone-indigo text-tone-indigo-fg rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                  className="bg-tone-indigo text-tone-indigo-fg inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50"
                 >
+                  {saving && <Spinner className="size-3.5" />}
                   {saving ? t('timeline.saving') : t('timeline.apply')}
                 </button>
               </div>

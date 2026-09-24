@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import BusyStatus, { Spinner } from './BusyStatus.jsx';
 import Card from './Card.jsx';
 import Modal from './Modal.jsx';
 import { BarcodeIcon, CameraIcon, NutritionIcon, PlusIcon, SparkleIcon, TrashIcon } from './icons.jsx';
@@ -156,6 +157,8 @@ function NutritionCard({
   const missStreak = useRef(0);
   const dateRef = useRef(nutrition?.date || '');
   const [photoKey, setPhotoKey] = useState(0);
+  const [photoPhase, setPhotoPhase] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
   const [inventOpen, setInventOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [workshopOpen, setWorkshopOpen] = useState(false);
@@ -376,22 +379,46 @@ function NutritionCard({
     if (!file) return;
     setResults([]);
     setPending(null);
+    setActionError(null);
+    setPhotoPreview(null);
+    setPhotoPhase('prepare');
     const dataUrl = await fileToJpegDataUrl(file).catch(() => null);
+    if (!mounted.current) return;
     if (!dataUrl) {
-      setBusy(null);
+      setPhotoPhase(null);
       setActionError('unavailable');
       return;
     }
-    const body = await run('photo', (signal) => api.analyzeMeal(dataUrl, { signal }), 'lookup');
-    if (!body) return;
-    const item = asItem(body.estimate, 'photo');
-    if (!item || (item.calories <= 0 && item.protein <= 0)) {
-      setBusy(null);
-      setActionError('notFood');
-      return;
+    setPhotoPreview(dataUrl);
+    setPhotoPhase('analyze');
+    try {
+      const body = await run('photo', (signal) => api.analyzeMeal(dataUrl, { signal }), 'lookup');
+      if (!mounted.current || !body) return;
+      const item = asItem(body.estimate, 'photo');
+      if (!item || (item.calories <= 0 && item.protein <= 0)) {
+        setActionError('notFood');
+        return;
+      }
+      setPending(item);
+    } finally {
+      if (mounted.current) {
+        setPhotoPhase(null);
+        setPhotoPreview(null);
+      }
     }
-    setPending(item);
   };
+
+  const activityLabel = () => {
+    if (photoPhase === 'prepare') return t('nutrition.preparingPhoto');
+    if (photoPhase === 'analyze' || busy === 'photo') return t('nutrition.photoWorking');
+    if (busy === 'search') return t('nutrition.searching');
+    if (busy === 'barcode') return t('nutrition.scanning');
+    if (busy === 'add') return t('nutrition.adding');
+    if (typeof busy === 'string' && busy.startsWith('del-')) return t('nutrition.removing');
+    return null;
+  };
+  const activity = activityLabel();
+  const photoBusy = photoPhase != null;
 
   const removeEntry = async (entryId) => {
     const next = await run(`del-${entryId}`, () => api.removeNutritionEntry(entryId));
@@ -418,7 +445,7 @@ function NutritionCard({
           onClick={() => addItem(item)}
           className="bg-tone-green text-tone-green-fg inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50"
         >
-          <PlusIcon className="size-3.5" />
+          {busy === 'add' ? <Spinner className="size-3.5" /> : <PlusIcon className="size-3.5" />}
           {busy === 'add' ? t('nutrition.adding') : t('nutrition.add')}
         </button>
       </div>
@@ -536,9 +563,10 @@ function NutritionCard({
               />
               <button
                 type="submit"
-                disabled={busy === 'search' || query.trim().length < 2}
-                className="border-border bg-surface text-foreground hover:bg-surface-hover rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50"
+                disabled={photoBusy || busy === 'search' || query.trim().length < 2}
+                className="border-border bg-surface text-foreground hover:bg-surface-hover inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50"
               >
+                {busy === 'search' && <Spinner className="size-3.5" />}
                 {busy === 'search' ? t('nutrition.searching') : t('nutrition.searchAction')}
               </button>
             </div>
@@ -548,27 +576,47 @@ function NutritionCard({
             <button
               type="button"
               onClick={() => setScanOpen(true)}
-              className="border-border text-foreground hover:bg-surface-hover inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium"
+              disabled={photoBusy || busy === 'barcode'}
+              className="border-border text-foreground hover:bg-surface-hover inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium disabled:opacity-50"
             >
-              <BarcodeIcon className="size-3.5" />
+              {busy === 'barcode' ? <Spinner className="size-3.5" /> : <BarcodeIcon className="size-3.5" />}
               {busy === 'barcode' ? t('nutrition.scanning') : t('nutrition.scan')}
             </button>
             <button
               type="button"
               onClick={() => openPicker('camera')}
-              className="border-border text-foreground hover:bg-surface-hover inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium"
+              disabled={photoBusy}
+              className="border-border text-foreground hover:bg-surface-hover inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium disabled:opacity-50"
             >
-              <CameraIcon className="size-3.5" />
-              {busy === 'photo' ? t('nutrition.analyzing') : t('nutrition.photo')}
+              {photoBusy ? <Spinner className="size-3.5" /> : <CameraIcon className="size-3.5" />}
+              {photoPhase === 'prepare'
+                ? t('nutrition.preparingPhoto')
+                : photoPhase === 'analyze'
+                  ? t('nutrition.analyzing')
+                  : t('nutrition.photo')}
             </button>
             <button
               type="button"
               onClick={() => openPicker('upload')}
-              className="border-border text-muted hover:text-foreground hover:bg-surface-hover rounded-lg border px-3 py-2 text-xs font-medium"
+              disabled={photoBusy}
+              className="border-border text-muted hover:text-foreground hover:bg-surface-hover inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium disabled:opacity-50"
             >
-              {t('nutrition.upload')}
+              {photoBusy && <Spinner className="size-3.5" />}
+              {photoPhase === 'prepare'
+                ? t('nutrition.preparingPhoto')
+                : photoPhase === 'analyze'
+                  ? t('nutrition.analyzing')
+                  : t('nutrition.upload')}
             </button>
           </div>
+
+          {activity && (
+            <BusyStatus
+              label={activity}
+              tone="green"
+              preview={photoPhase === 'analyze' ? photoPreview : null}
+            />
+          )}
 
           {actionError && (
             <p className="text-tone-rose-fg text-sm">
@@ -611,9 +659,9 @@ function NutritionCard({
                     aria-label={t('nutrition.remove')}
                     disabled={busy === `del-${entry.id}`}
                     onClick={() => removeEntry(entry.id)}
-                    className="text-muted hover:text-tone-rose-fg grid size-8 shrink-0 place-items-center rounded-lg"
+                    className="text-muted hover:text-tone-rose-fg grid size-8 shrink-0 place-items-center rounded-lg disabled:opacity-50"
                   >
-                    <TrashIcon className="size-3.5" />
+                    {busy === `del-${entry.id}` ? <Spinner className="size-3.5" /> : <TrashIcon className="size-3.5" />}
                   </button>
                 </li>
               ))}

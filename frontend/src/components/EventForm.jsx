@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { Spinner } from './BusyStatus.jsx';
 import Modal from './Modal.jsx';
 import TimeSelect, { addClockMinutes, nextClockSlot } from './TimeSelect.jsx';
 import AddressInput from './AddressInput.jsx';
@@ -278,8 +279,9 @@ export default function EventForm({ open, onClose, timeZone, places, onCreated }
           <button
             type="submit"
             disabled={saving}
-            className="bg-tone-indigo text-tone-indigo-fg rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+            className="bg-tone-indigo text-tone-indigo-fg inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
           >
+            {saving && <Spinner className="size-3.5" />}
             {saving ? t('onboard.saving') : t('schedule.save')}
           </button>
         </div>

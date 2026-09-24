@@ -1,32 +1,11 @@
 import { memo, useEffect, useRef, useState } from 'react';
+import BusyStatus, { Spinner } from './BusyStatus.jsx';
 import Card from './Card.jsx';
 import Modal from './Modal.jsx';
 import { ChatIcon, SendIcon } from './icons.jsx';
 import { api } from '../lib/api.js';
 import { useHighlight, widgetOfSource } from '../lib/highlight.jsx';
 import { useT } from '../lib/i18n.jsx';
-
-function AskPending({ label }) {
-  return (
-    <div
-      className="bg-tone-neutral text-foreground inline-block w-full max-w-[95%] rounded-xl px-3 py-2.5"
-      role="status"
-      aria-live="polite"
-      aria-busy="true"
-    >
-      <div className="flex items-center gap-2.5">
-        <span
-          className="border-tone-blue-fg size-4 shrink-0 animate-spin rounded-full border-2 border-t-transparent"
-          aria-hidden="true"
-        />
-        <p className="text-sm">{label}</p>
-      </div>
-      <div className="bg-tone-blue/30 mt-2.5 h-1.5 overflow-hidden rounded-full">
-        <span className="ask-progress bg-tone-blue-fg block h-full w-1/3 rounded-full" />
-      </div>
-    </div>
-  );
-}
 
 function AskWeekCard() {
   const { t } = useT();
@@ -127,7 +106,7 @@ function AskWeekCard() {
       ))}
       {busy && (
         <div ref={pendingRef}>
-          <AskPending label={t('ask.asking')} />
+          <BusyStatus label={t('ask.asking')} tone="blue" />
         </div>
       )}
       {error && (
@@ -198,14 +177,7 @@ function AskWeekCard() {
               aria-label={busy ? t('ask.asking') : t('ask.send')}
               className="bg-tone-blue text-tone-blue-fg grid size-10 shrink-0 place-items-center rounded-lg disabled:opacity-50"
             >
-              {busy ? (
-                <span
-                  className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-                  aria-hidden="true"
-                />
-              ) : (
-                <SendIcon className="size-4" />
-              )}
+              {busy ? <Spinner className="size-4" /> : <SendIcon className="size-4" />}
             </button>
           </div>
           {attempted && input.trim().length < 3 && (

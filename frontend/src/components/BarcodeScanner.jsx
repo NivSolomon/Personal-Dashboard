@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import BusyStatus from './BusyStatus.jsx';
 import Modal from './Modal.jsx';
 import { useT } from '../lib/i18n.jsx';
 
@@ -19,14 +20,20 @@ export default function BarcodeScanner({ open, onDetected, onClose }) {
   const fileRef = useRef(null);
   const [cameraError, setCameraError] = useState(false);
   const [fileError, setFileError] = useState(false);
+  const [booting, setBooting] = useState(false);
+  const [scanningFile, setScanningFile] = useState(false);
   onDetectedRef.current = onDetected;
 
   useEffect(() => {
     if (!open) {
       setCameraError(false);
       setFileError(false);
+      setBooting(false);
+      setScanningFile(false);
       return undefined;
     }
+
+    setBooting(true);
 
     let scanner;
     let cancelled = false;
@@ -58,8 +65,12 @@ export default function BarcodeScanner({ open, onDetected, onClose }) {
               .finally(() => onDetectedRef.current?.(code));
           },
         );
+        if (!cancelled) setBooting(false);
       } catch {
-        if (!cancelled) setCameraError(true);
+        if (!cancelled) {
+          setCameraError(true);
+          setBooting(false);
+        }
       }
     };
 
@@ -77,8 +88,9 @@ export default function BarcodeScanner({ open, onDetected, onClose }) {
   }, [open, readerId]);
 
   const scanFile = async (file) => {
-    if (!file) return;
+    if (!file || scanningFile) return;
     setFileError(false);
+    setScanningFile(true);
     const scanner = new Html5Qrcode(`${readerId}-file`, { formatsToSupport: FORMATS, verbose: false });
     try {
       const decoded = await scanner.scanFile(file, true);
@@ -89,6 +101,7 @@ export default function BarcodeScanner({ open, onDetected, onClose }) {
       setFileError(true);
     } finally {
       await scanner.clear().catch(() => {});
+      setScanningFile(false);
     }
   };
 
@@ -106,6 +119,8 @@ export default function BarcodeScanner({ open, onDetected, onClose }) {
           className="bg-tone-neutral overflow-hidden rounded-xl [&_video]:max-h-64 [&_video]:w-full [&_video]:object-cover"
         />
         <div id={`${readerId}-file`} className="hidden" />
+        {booting && !cameraError && <BusyStatus label={t('nutrition.cameraStarting')} tone="green" />}
+        {scanningFile && <BusyStatus label={t('nutrition.scanFileBusy')} tone="green" />}
         {cameraError && <p className="text-tone-rose-fg text-sm">{t('nutrition.cameraDenied')}</p>}
         {fileError && <p className="text-tone-rose-fg text-sm">{t('nutrition.barcodeMissing')}</p>}
         <div className="flex flex-wrap gap-2">
@@ -123,9 +138,10 @@ export default function BarcodeScanner({ open, onDetected, onClose }) {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="border-border bg-surface text-foreground hover:bg-surface-hover rounded-lg border px-3 py-2 text-sm font-medium"
+            disabled={scanningFile}
+            className="border-border bg-surface text-foreground hover:bg-surface-hover rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50"
           >
-            {t('nutrition.scanFile')}
+            {scanningFile ? t('nutrition.scanFileBusy') : t('nutrition.scanFile')}
           </button>
           <button
             type="button"

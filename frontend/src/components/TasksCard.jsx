@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useId, useState } from 'react';
+import { Spinner } from './BusyStatus.jsx';
 import Card from './Card.jsx';
 import Modal from './Modal.jsx';
 import ConfirmDelete from './ConfirmDelete.jsx';
@@ -190,7 +191,7 @@ function TasksCard({ tasks = [], timeZone, loading, error, onChanged, places }) 
           onClick={() => setPendingComplete(task)}
           className="border-tone-green-fg/60 text-tone-green-fg hover:bg-tone-green mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-2 disabled:opacity-50"
         >
-          {busy ? <span className="bg-tone-green-fg size-2 rounded-full" /> : null}
+          {busy ? <Spinner className="size-2.5" /> : null}
         </button>
         <div className="min-w-0 flex-1">
           <p className="text-foreground font-medium">{task.title}</p>
@@ -435,8 +436,9 @@ function TasksCard({ tasks = [], timeZone, loading, error, onChanged, places }) 
             <button
               type="submit"
               disabled={creating}
-              className="bg-tone-green text-tone-green-fg rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
+              className="bg-tone-green text-tone-green-fg inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50"
             >
+              {creating && <Spinner className="size-3.5" />}
               {creating ? t('tasks.adding') : t('tasks.add')}
             </button>
           </div>

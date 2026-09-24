@@ -1,7 +1,8 @@
 import { memo, useEffect, useMemo, useState } from 'react';
+import BusyStatus, { Spinner } from './BusyStatus.jsx';
 import Card from './Card.jsx';
 import Modal from './Modal.jsx';
-import { ChartIcon, DollarIcon, PlusIcon, TrashIcon } from './icons.jsx';
+import { DollarIcon, PlusIcon, TrashIcon } from './icons.jsx';
 import { api } from '../lib/api.js';
 import {
   FX_PINNED,
@@ -175,9 +176,9 @@ function RateRow({ row, language, locale, pricedIn, onOpen, onRemove, busy }) {
           aria-label={t('usd.remove')}
           disabled={busy === `del-${row.code}`}
           onClick={() => onRemove(row.code)}
-          className="text-muted hover:text-tone-rose-fg grid size-10 shrink-0 place-items-center rounded-lg"
+          className="text-muted hover:text-tone-rose-fg grid size-10 shrink-0 place-items-center rounded-lg disabled:opacity-50"
         >
-          <TrashIcon className="size-3.5" />
+          {busy === `del-${row.code}` ? <Spinner className="size-3.5" /> : <TrashIcon className="size-3.5" />}
         </button>
       )}
     </li>
@@ -281,8 +282,9 @@ function UsdCard({ quote, settings, loading, error, onAccountChange }) {
             type="button"
             disabled={Boolean(busy)}
             onClick={() => addCurrency(code)}
-            className="border-border text-foreground hover:bg-surface-hover rounded-lg border px-2.5 py-1 text-xs font-semibold"
+            className="border-border text-foreground hover:bg-surface-hover inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold disabled:opacity-50"
           >
+            {busy === `add-${code}` && <Spinner className="size-3" />}
             {displayFxCode(code)}
           </button>
         ))}
@@ -376,6 +378,7 @@ function UsdCard({ quote, settings, loading, error, onAccountChange }) {
             ))}
           </ul>
           {addControls}
+          {busy && <BusyStatus label={t('usd.updating')} tone="green" />}
           {hint && <p className="text-tone-rose-fg text-sm">{hint}</p>}
           {quote?.asOf && <p className="text-subtle text-xs">{t('usd.asOf', { date: quote.asOf })}</p>}
         </div>
@@ -409,12 +412,7 @@ function UsdCard({ quote, settings, loading, error, onAccountChange }) {
               ))}
             </div>
 
-            {!history && (
-              <p className="text-muted flex items-center gap-2 text-sm">
-                <ChartIcon className="size-4" />
-                {t('usd.chartLoading')}
-              </p>
-            )}
+            {!history && <BusyStatus label={t('usd.chartLoading')} tone="green" />}
             {history?.error && <p className="text-tone-rose-fg text-sm">{t('usd.chartError')}</p>}
             {history?.points && (
               <>

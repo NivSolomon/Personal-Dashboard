@@ -8,6 +8,7 @@ import { LanguageSwitch, displayFirstName, normalizeLanguage, useT } from '../li
 import LanguageMenu from './LanguageMenu.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import { SoundToggle } from './SoundFx.jsx';
+import { Spinner } from './BusyStatus.jsx';
 import BrandLogo from './BrandLogo.jsx';
 import ConfettiBurst from './ConfettiBurst.jsx';
 import {
@@ -261,8 +262,9 @@ export default function OnboardingWizard({
                   type="button"
                   disabled={!canAdvance || saving}
                   onClick={submit}
-                  className="from-banner-from to-banner-to flex-[2] rounded-xl bg-gradient-to-br px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+                  className="from-banner-from to-banner-to inline-flex flex-[2] items-center justify-center gap-2 rounded-xl bg-gradient-to-br px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
                 >
+                  {saving && <Spinner className="size-4" />}
                   {saving ? t('onboard.saving') : t('onboard.save')}
                 </button>
               )}
