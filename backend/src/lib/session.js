@@ -5,10 +5,10 @@ const STATE_COOKIE = 'oauth_state';
 
 const baseOptions = {
   httpOnly: true,
-  sameSite: 'lax',
+  sameSite: 'none',
   path: '/',
   signed: true,
-  secure: config.cookieSecure,
+  secure: true,
 };
 
 export function setSession(reply, userId) {
