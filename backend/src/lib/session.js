@@ -5,10 +5,14 @@ const STATE_COOKIE = 'oauth_state';
 
 const baseOptions = {
   httpOnly: true,
-  sameSite: 'none',
+  // The browser only talks to this app's own origin (Vite in dev, Vercel in
+  // production). Lax is sent on the Google redirect back and on later /api calls.
+  // SameSite=None plus Secure is dropped on http://localhost, so login returns
+  // here with no cookie and /api/me answers 401.
+  sameSite: 'lax',
   path: '/',
   signed: true,
-  secure: true,
+  secure: config.cookieSecure,
 };
 
 export function setSession(reply, userId) {
