@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 // 127.0.0.1 avoids Windows resolving `localhost` to ::1 first, which shows up as
 // ECONNREFUSED from Vite's proxy while the backend is bound on IPv4.
-const backend = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
+const backend = process.env.VITE_BACKEND_URL || 'http://127.0.0.1:3000';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
