@@ -37,7 +37,7 @@ import { askWeek } from '../services/weekAsk.js';
 import { describeSelection, listNotionDataSources } from '../integrations/notionOAuth.js';
 import { completeTask, createTask, deleteTask, reopenTask } from '../google/tasks.js';
 import { createCalendarEvent, deleteCalendarEvent, updateCalendarEvent } from '../google/calendar.js';
-import { searchQuotes, fetchQuote } from '../integrations/quotes.js';
+import { searchQuotes, fetchQuote, fetchQuoteHistory } from '../integrations/quotes.js';
 import { normalizeCurrency } from '../lib/watchlist.js';
 import { suggestPlaces } from '../integrations/places.js';
 import { estimateArrivals } from '../integrations/waze.js';
@@ -508,6 +508,22 @@ export async function apiRoutes(app) {
       return reply.code(502).send({ error: 'search_unavailable' });
     }
   });
+
+  app.get(
+    '/api/quotes/history',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const symbol = String(request.query.symbol || '').trim();
+      const days = Number(request.query.days);
+      try {
+        return await fetchQuoteHistory(symbol, days);
+      } catch (error) {
+        request.log.warn({ err: error }, 'quote history failed');
+        const status = error.statusCode || 502;
+        return reply.code(status).send({ error: error.code || 'unavailable' });
+      }
+    },
+  );
 
   app.get('/api/quotes/one', async (request, reply) => {
     const symbol = String(request.query.symbol || '').trim();

@@ -39,6 +39,7 @@ function AskWeekCard() {
   const [workshopOpen, setWorkshopOpen] = useState(false);
 
   const pendingRef = useRef(null);
+  const citingRef = useRef(false);
 
   const ask = async (event) => {
     event.preventDefault();
@@ -102,9 +103,16 @@ function AskWeekCard() {
                 <button
                   key={citation.id}
                   type="button"
-                  onMouseEnter={() => hover([citation.id])}
-                  onMouseLeave={() => hover([])}
+                  onMouseEnter={() => {
+                    citingRef.current = false;
+                    hover([citation.id]);
+                  }}
+                  onMouseLeave={() => {
+                    if (citingRef.current) return;
+                    hover([]);
+                  }}
                   onClick={() => {
+                    citingRef.current = true;
                     setWorkshopOpen(false);
                     openCitation(citation);
                   }}

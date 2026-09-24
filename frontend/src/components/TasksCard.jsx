@@ -1,4 +1,4 @@
-import { memo, useCallback, useId, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useState } from 'react';
 import Card from './Card.jsx';
 import Modal from './Modal.jsx';
 import ConfirmDelete from './ConfirmDelete.jsx';
@@ -25,7 +25,7 @@ const fieldClass =
 
 function TasksCard({ tasks = [], timeZone, loading, error, onChanged, places }) {
   const { t } = useT();
-  const { active } = useHighlight();
+  const { active, openedWidget } = useHighlight();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [due, setDue] = useState('');
@@ -47,6 +47,21 @@ function TasksCard({ tasks = [], timeZone, loading, error, onChanged, places }) 
   const errorId = useId();
 
   const visible = tasks.filter((task) => !doneIds.includes(task.id) && !removedIds.includes(task.id));
+
+  useEffect(() => {
+    if (openedWidget?.widget !== 'tasks') return undefined;
+    const sourceId = String(openedWidget.sourceId || '');
+    if (!sourceId.startsWith('task:')) return undefined;
+    setListOpen(true);
+    const timer = window.setTimeout(() => {
+      const escaped =
+        typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(sourceId) : sourceId.replace(/"/g, '\\"');
+      document
+        .querySelector(`[data-task-placement="list"][data-source-id="${escaped}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 160);
+    return () => window.clearTimeout(timer);
+  }, [openedWidget]);
   const preview = visible.slice(0, SCAN_PREVIEW);
   const extraCount = Math.max(0, visible.length - preview.length);
 
@@ -158,13 +173,14 @@ function TasksCard({ tasks = [], timeZone, loading, error, onChanged, places }) 
     }
   };
 
-  const taskRow = (task) => {
+  const taskRow = (task, placement) => {
     const dueInfo = dueLabel(task.due, timeZone);
     const busy = completingId === task.id;
     return (
       <li
         key={task.id}
         data-source-id={`task:${task.id}`}
+        data-task-placement={placement}
         className={`flex items-start gap-3 rounded-lg ${citedItemClass(isSourceActive(active, `task:${task.id}`))}`}
       >
         <button
@@ -268,7 +284,7 @@ function TasksCard({ tasks = [], timeZone, loading, error, onChanged, places }) 
           )
         }
       >
-        {preview.map(taskRow)}
+        {preview.map((task) => taskRow(task, 'preview'))}
       </Card>
 
       <Modal
@@ -279,7 +295,7 @@ function TasksCard({ tasks = [], timeZone, loading, error, onChanged, places }) 
         onClose={() => setListOpen(false)}
       >
         <ul className="scroll-area max-h-[min(70vh,36rem)] space-y-4 overflow-y-auto">
-          {visible.map(taskRow)}
+          {visible.map((task) => taskRow(task, 'list'))}
         </ul>
       </Modal>
 

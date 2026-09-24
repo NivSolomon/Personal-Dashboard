@@ -196,4 +196,9 @@ export const api = {
     if (days) params.set('days', String(days));
     return request(`/api/fx/history?${params}`, options);
   },
+  quoteHistory: ({ symbol, days }, options) => {
+    const params = new URLSearchParams({ symbol });
+    if (days) params.set('days', String(days));
+    return request(`/api/quotes/history?${params}`, options);
+  },
 };

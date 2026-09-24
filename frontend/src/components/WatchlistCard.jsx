@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import Card from './Card.jsx';
 import Modal from './Modal.jsx';
 import WatchlistEditor from './WatchlistEditor.jsx';
@@ -6,9 +6,185 @@ import { BellIcon, ChartIcon, PlusIcon, TrashIcon } from './icons.jsx';
 import { api } from '../lib/api.js';
 import { watchlistErrorText } from '../lib/errors.js';
 import { alertOpLabel, alertSideLabel, currencyLabel, moneyLabel } from '../lib/format.js';
-import { tr, useT } from '../lib/i18n.jsx';
+import { localeOf, tr, useT } from '../lib/i18n.jsx';
 import { citedItemClass, isSourceActive, useHighlight } from '../lib/highlight.jsx';
 import { playUi } from '../lib/sounds.js';
+
+function changeClass(value) {
+  if (value > 0) return 'text-tone-green-fg';
+  if (value < 0) return 'text-tone-rose-fg';
+  return 'text-muted';
+}
+
+function formatChartDate(value, language) {
+  const [year, month, day] = String(value || '').split('-').map(Number);
+  if (!year || !month || !day) return value || '';
+  return new Date(year, month - 1, day).toLocaleDateString(localeOf(language), {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function formatSigned(value, language) {
+  if (value == null || Number.isNaN(Number(value))) return '';
+  const n = Number(value);
+  const text = n.toLocaleString(localeOf(language), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: Math.abs(n) >= 100 ? 2 : 4,
+  });
+  return n > 0 ? `+${text}` : text;
+}
+
+function formatPct(value, language) {
+  if (value == null || Number.isNaN(Number(value))) return '';
+  const n = Number(value);
+  const text = Math.abs(n).toLocaleString(localeOf(language), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  if (n > 0) return `+${text}%`;
+  if (n < 0) return `-${text}%`;
+  return `${text}%`;
+}
+
+function formatAmount(value, language) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  const n = Number(value);
+  return n.toLocaleString(localeOf(language), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: Math.abs(n) >= 100 ? 2 : 4,
+  });
+}
+
+function formatVolume(value, language) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return n.toLocaleString(localeOf(language), { notation: 'compact', maximumFractionDigits: 1 });
+}
+
+function PriceChart({ points, language, currency, positive }) {
+  const { t } = useT();
+  const [hover, setHover] = useState(null);
+  const width = 360;
+  const height = 148;
+  const padX = 12;
+  const padY = 14;
+
+  const dots = useMemo(() => {
+    if (!points?.length) return [];
+    const values = points.map((point) => point.price);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    return points.map((point, index) => ({
+      ...point,
+      x: padX + (index / Math.max(points.length - 1, 1)) * (width - padX * 2),
+      y: padY + (1 - (point.price - min) / span) * (height - padY * 2),
+    }));
+  }, [points]);
+
+  if (!dots.length) return null;
+
+  const line = dots.map((dot) => `${dot.x},${dot.y}`).join(' ');
+  const area = `${padX},${height - padY} ${line} ${width - padX},${height - padY}`;
+  const last = dots.at(-1);
+  const activeIndex = hover != null ? hover : dots.length - 1;
+  const active = dots[activeIndex];
+  const previous = activeIndex > 0 ? dots[activeIndex - 1] : null;
+  const dayChange = previous ? active.price - previous.price : null;
+  const dayPct = previous?.price ? (dayChange / previous.price) * 100 : null;
+  const volume = formatVolume(active.volume, language);
+
+  const pickNearest = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * width;
+    let best = 0;
+    let bestDist = Infinity;
+    for (let index = 0; index < dots.length; index += 1) {
+      const dist = Math.abs(dots[index].x - x);
+      if (dist < bestDist) {
+        best = index;
+        bestDist = dist;
+      }
+    }
+    setHover(best);
+  };
+
+  const tipLeft = Math.min(78, Math.max(22, (active.x / width) * 100));
+  const tipTop = (active.y / height) * 100;
+  const tipBelow = active.y < height * 0.45;
+
+  return (
+    <div
+      className="relative touch-none"
+      onPointerDown={pickNearest}
+      onPointerMove={pickNearest}
+      onPointerLeave={() => setHover(null)}
+    >
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className={`${positive ? 'text-tone-green-fg' : 'text-tone-rose-fg'} h-44 w-full cursor-crosshair`}
+        role="img"
+        aria-label={t('watch.chartHover')}
+      >
+        <polyline fill="currentColor" fillOpacity="0.12" stroke="none" points={area} />
+        <polyline fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" points={line} />
+        <line
+          x1={active.x}
+          x2={active.x}
+          y1={padY - 4}
+          y2={height - padY + 4}
+          stroke="currentColor"
+          strokeOpacity="0.28"
+          strokeDasharray="3 3"
+        />
+        <circle cx={active.x} cy={active.y} r="4.5" fill="currentColor" />
+      </svg>
+      <div
+        className="bg-surface border-border text-foreground pointer-events-none absolute z-10 max-w-[14rem] rounded-lg border px-2.5 py-1.5 shadow-lg"
+        style={{
+          left: `${tipLeft}%`,
+          top: tipBelow ? `calc(${tipTop}% + 0.7rem)` : `calc(${tipTop}% - 0.4rem)`,
+          transform: tipBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+        }}
+      >
+        <p className="text-muted text-[11px] leading-none">{formatChartDate(active.date, language)}</p>
+        <p className="mt-1 text-sm font-semibold tabular-nums">{moneyLabel(active.price, currency)}</p>
+        {dayChange != null && (
+          <p className={`text-[11px] font-medium tabular-nums ${changeClass(dayChange)}`}>
+            {formatSigned(dayChange, language)} ({formatPct(dayPct, language)})
+          </p>
+        )}
+        {(active.high != null || active.low != null) && (
+          <p className="text-muted mt-1 text-[11px] tabular-nums">
+            {active.high != null && (
+              <span>
+                {t('watch.high')} {moneyLabel(active.high, currency)}
+              </span>
+            )}
+            {active.high != null && active.low != null && <span> · </span>}
+            {active.low != null && (
+              <span>
+                {t('watch.low')} {moneyLabel(active.low, currency)}
+              </span>
+            )}
+          </p>
+        )}
+        {active.open != null && (
+          <p className="text-muted text-[11px] tabular-nums">
+            {t('watch.open')} {moneyLabel(active.open, currency)}
+          </p>
+        )}
+        {volume && (
+          <p className="text-muted text-[11px] tabular-nums">
+            {t('watch.volume')} {volume}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function notifyBrowser(fired) {
   if (!fired.length || typeof Notification === 'undefined') return;
@@ -54,7 +230,7 @@ function WatchlistCard({
   error,
   onAccountChange,
 }) {
-  const { t } = useT();
+  const { t, language } = useT();
   const { active } = useHighlight();
   const items = watchlist?.items || [];
   const fired = watchlist?.fired || [];
@@ -67,6 +243,10 @@ function WatchlistCard({
     typeof Notification !== 'undefined' && Notification.permission === 'default',
   );
   const [manageOpen, setManageOpen] = useState(false);
+  const [chartItem, setChartItem] = useState(null);
+  const [history, setHistory] = useState(null);
+  const [range, setRange] = useState(90);
+  const chartRequest = useRef(0);
   const previewItems = items.slice(0, 2);
   const extraCount = Math.max(0, items.length - previewItems.length);
 
@@ -106,6 +286,29 @@ function WatchlistCard({
     await run(`alert-${itemId}`, () => api.addWatchlistAlert(itemId, { op: alertOp, price }));
     setAddingAlertFor(null);
     setAlertPrice('');
+  };
+
+  const openChart = async (item, days = range) => {
+    if (!item?.symbol) return;
+    const ticket = chartRequest.current + 1;
+    chartRequest.current = ticket;
+    setChartItem(item);
+    setHistory(null);
+    setRange(days);
+    try {
+      const body = await api.quoteHistory({ symbol: item.symbol, days });
+      if (chartRequest.current !== ticket) return;
+      setHistory(body);
+    } catch {
+      if (chartRequest.current !== ticket) return;
+      setHistory({ error: true });
+    }
+  };
+
+  const closeChart = () => {
+    chartRequest.current += 1;
+    setChartItem(null);
+    setHistory(null);
   };
 
   const enableBrowserAlerts = async () => {
@@ -184,7 +387,14 @@ function WatchlistCard({
           hot ? 'border-tone-rose-fg/40' : ''
         } ${citedItemClass(isSourceActive(active, `watch:${item.symbol}`))}`}
       >
-        {quoteRow(item)}
+        <button
+          type="button"
+          onClick={() => openChart(item)}
+          aria-label={t('watch.openChart', { symbol: item.symbol })}
+          className="hover:bg-surface-hover w-full rounded-lg text-start"
+        >
+          {quoteRow(item)}
+        </button>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {(item.alerts || []).map((alert) => (
             <AlertLine
@@ -302,7 +512,8 @@ function WatchlistCard({
               >
                 <button
                   type="button"
-                  onClick={() => setManageOpen(true)}
+                  onClick={() => openChart(item)}
+                  aria-label={t('watch.openChart', { symbol: item.symbol })}
                   className="hover:bg-surface-hover w-full rounded-lg text-start"
                 >
                   {quoteRow(item)}
@@ -334,7 +545,10 @@ function WatchlistCard({
           {items.length === 0 ? (
             <p className="text-muted text-sm text-balance">{t('watch.empty')}</p>
           ) : (
-            <ul className="space-y-3">{items.map(workshopItem)}</ul>
+            <>
+              <p className="text-muted text-xs">{t('watch.tapChart')}</p>
+              <ul className="space-y-3">{items.map(workshopItem)}</ul>
+            </>
           )}
           {actionError && <p className="text-tone-rose-fg text-xs">{watchlistErrorText(actionError)}</p>}
           {notifyHint && items.some((item) => item.alerts?.length) && (
@@ -349,6 +563,71 @@ function WatchlistCard({
           <div className="border-border-subtle border-t pt-3">
             <WatchlistEditor compact={items.length > 0} onAdded={afterChange} busy={Boolean(busy)} />
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(chartItem)}
+        size="lg"
+        title={chartItem?.name || chartItem?.symbol || t('widget.watchlist.title')}
+        description={chartItem ? t('watch.chartHint', { symbol: chartItem.symbol }) : ''}
+        onClose={closeChart}
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {[30, 90, 365].map((days) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => chartItem && openChart(chartItem, days)}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${
+                  range === days
+                    ? 'border-tone-green-fg/30 bg-tone-green text-tone-green-fg'
+                    : 'border-border text-muted hover:text-foreground hover:bg-surface-hover'
+                }`}
+              >
+                {t(`watch.range.${days}`)}
+              </button>
+            ))}
+          </div>
+
+          {!history && (
+            <p className="text-muted flex items-center gap-2 text-sm">
+              <ChartIcon className="size-4" />
+              {t('watch.chartLoading')}
+            </p>
+          )}
+          {history?.error && <p className="text-tone-rose-fg text-sm">{t('watch.chartError')}</p>}
+          {history?.points && (
+            <>
+              <PriceChart
+                points={history.points}
+                language={language}
+                currency={history.currency || chartItem?.quote?.currency || chartItem?.currency}
+                positive={(history.change || 0) >= 0}
+              />
+              <dl className="grid grid-cols-3 gap-3 text-sm">
+                <div>
+                  <dt className="text-muted text-xs">{t('watch.now')}</dt>
+                  <dd className="text-foreground font-semibold tabular-nums">
+                    {moneyLabel(history.last, history.currency || chartItem?.currency)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted text-xs">{t('watch.rangeMove')}</dt>
+                  <dd className={`font-semibold tabular-nums ${changeClass(history.change)}`}>
+                    {formatPct(history.changePct, language)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted text-xs">{t('watch.highLow')}</dt>
+                  <dd className="text-foreground font-semibold tabular-nums">
+                    {formatAmount(history.high, language)} / {formatAmount(history.low, language)}
+                  </dd>
+                </div>
+              </dl>
+            </>
+          )}
         </div>
       </Modal>
     </Card>

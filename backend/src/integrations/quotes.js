@@ -1,4 +1,4 @@
-import { kindFromQuoteType, normalizeCurrency } from '../lib/watchlist.js';
+import { cleanSymbol, kindFromQuoteType, normalizeCurrency } from '../lib/watchlist.js';
 
 const SEARCH_URL = 'https://query2.finance.yahoo.com/v1/finance/search';
 const CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
@@ -120,4 +120,72 @@ export async function fetchQuotes(symbols) {
 export async function fetchQuote(symbol) {
   const quotes = await fetchQuotes([symbol]);
   return quotes.get(String(symbol || '').toUpperCase()) || null;
+}
+
+function fail(statusCode, code) {
+  const error = new Error(code);
+  error.statusCode = statusCode;
+  error.code = code;
+  return error;
+}
+
+/**
+ * Daily bars for the chart popup. `days` is 30, 90, or 365.
+ * TASE prices arrive in agorot (ILA) and are scaled to shekels, matching live quotes.
+ */
+export async function fetchQuoteHistory(symbol, days = 90) {
+  const clean = cleanSymbol(symbol);
+  if (!clean) throw fail(400, 'invalid_symbol');
+
+  const span = [30, 90, 365].includes(Number(days)) ? Number(days) : 90;
+  const period2 = Math.floor(Date.now() / 1000);
+  const period1 = period2 - span * 86400;
+  const url = `${CHART_URL}/${encodeURIComponent(clean)}?interval=1d&period1=${period1}&period2=${period2}`;
+  const payload = await getJson(url);
+  const result = payload.chart?.result?.[0];
+  const timestamps = result?.timestamp || [];
+  const bars = result?.indicators?.quote?.[0] || {};
+  const closes = bars.close || [];
+  if (!result || !timestamps.length) throw fail(502, 'quote_empty');
+
+  const scale = String(result.meta?.currency || '').toUpperCase() === 'ILA' ? 0.01 : 1;
+  const points = [];
+  const count = Math.min(timestamps.length, closes.length);
+
+  for (let index = 0; index < count; index += 1) {
+    const close = Number(closes[index]);
+    if (!Number.isFinite(close)) continue;
+    const open = Number(bars.open?.[index]);
+    const high = Number(bars.high?.[index]);
+    const low = Number(bars.low?.[index]);
+    const volume = Number(bars.volume?.[index]);
+    points.push({
+      date: new Date(timestamps[index] * 1000).toISOString().slice(0, 10),
+      price: round(close * scale, 4),
+      open: Number.isFinite(open) ? round(open * scale, 4) : null,
+      high: Number.isFinite(high) ? round(high * scale, 4) : null,
+      low: Number.isFinite(low) ? round(low * scale, 4) : null,
+      volume: Number.isFinite(volume) ? Math.round(volume) : null,
+    });
+  }
+
+  if (!points.length) throw fail(502, 'quote_empty');
+
+  const first = points[0].price;
+  const last = points.at(-1).price;
+  const change = last - first;
+  const highs = points.map((point) => point.high ?? point.price);
+  const lows = points.map((point) => point.low ?? point.price);
+
+  return {
+    symbol: result.meta?.symbol || clean,
+    currency: normalizeCurrency(result.meta?.currency),
+    points,
+    first,
+    last,
+    change: round(change, 4),
+    changePct: first ? round((change / first) * 100, 2) : null,
+    low: round(Math.min(...lows), 4),
+    high: round(Math.max(...highs), 4),
+  };
 }
